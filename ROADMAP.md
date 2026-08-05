@@ -1,5 +1,7 @@
 ## V-0.00
-```C // @class: dhttp::http<br><br>```
+```C
+ // @class: dhttp::http
+```
 
 ## V-0.90
 
@@ -21,7 +23,7 @@ bool test = request.headers.has_duplicate()
 auto iter = request.iterator()
 request.dump()
 ```
-<br>
+
 ## V-1.01
 ```C
 // Handle chunk data
