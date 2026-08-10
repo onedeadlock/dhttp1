@@ -235,19 +235,6 @@ namespace dhttp
             __uint128_t lo, hi;
         } __m256i;
 
-        __attribute__((always_inlne)) __uint128_t _mm_mul_epu64(const u64_t u, const u64_t v)
-        {
-#if HAVE_GGC_VARIANT__
-            return static_cast<const __uint128_t>(u) * v;
-#elif HAVE_MSVC__ && (defined(_M_X64) || defined(_M_ARM64))
-            u64_t xx = 0;
-            u64_t x = _umul128(u, v, &xx);
-            return static_cast<const __uint128_t>(x) << 64 | xx;
-#elif HAVE_MSVC__ && defined(_M_ARM64)
-            return static_cast<const __uint128_t>(_umulh128(u, x)) << 64 | (u * x);
-#endif
-        }
-
         dhttp_attr(inline) __m256i _mm256_loadu_si256(const void *b)
         {
             const __uint128_t *x = reinterpret_cast<const __uint128_t *>(b);
@@ -329,7 +316,7 @@ namespace dhttp
 
         dhttp_attr(inline) __m256i _mm256_set1_epi8(const u8_t c)
         {
-            const u64_t x = static_cast<const u64_t>(c) * 0x101010101010101ULL;
+            const u64_t x = U64(c) * 0x101010101010101ULL;
             return {x, x, x, x};
         }
 
@@ -348,10 +335,21 @@ namespace dhttp
             return y << 16 | x;
         }
 
-        constexpr dhttp_attr(inline) u64_t _mm_cmpgtnlt_epi8(const __m256i v, u64_t a, u64_t b)
+        constexpr dhttp_attr(inline) u64_t _mm_cmpgt1_epi8(const __m256i v, const u64_t a)
         {
-            u64_t x = (0x7f - a) * 0x101010101010101ULL;
-            u64_t y = (0x7f + b) * 0x101010101010101ULL;
+            static constexpr u64_t mu = 0x8080808080808080ULL;
+            const u64_t x = (0x7f - a) * 0x101010101010101ULL;
+           
+            return {
+                (((v.lo + x) | v.lo) & mu), (((v.vlo + x) | v.vlo) & mu),
+                (((v.hi + x) | v.hi) & mu), (((v.vhi + x) | v.vhi) & mu),
+            };
+        }
+
+        constexpr dhttp_attr(inline) u64_t _mm_cmpgtnlt_epi8(const __m256i v, const u64_t a, const u64_t b)
+        {
+            const u64_t x = (0x7f - a) * 0x101010101010101ULL;
+            const u64_t y = (0x7f + b) * 0x101010101010101ULL;
 
             return {
                 y - (v.lo  & 0x7f7f7f7f7f7f7f7fULL) & x + (v.lo  & 0x7f7f7f7f7f7f7f7fULL) & (~v.lo  & 0x8080808080808080ULL),
@@ -410,7 +408,7 @@ namespace dhttp
         dhttp_attr(inline) u64_t _mm512_movemask_epi8_(const __m512i_ u)
         {
 
-            return static_cast<u64_t>(_mm256_movemask_epi8(u.hi)) << 32 | _mm256_movemask_epi8(u.lo);
+            return U64(_mm256_movemask_epi8(u.hi)) << 32 | _mm256_movemask_epi8(u.lo);
         }
 
         dhttp_attr(inline) __m512i_ _mm512_cmpeq_epi8_(const __m512i_ u, const __m512i_ v)
