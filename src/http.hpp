@@ -263,14 +263,14 @@ namespace dhttp
         dhttp_attr(inline) uint16_t _mm256_movemask_epi8(__m256i const u)
         {
             static constexpr u64_t mp = 0x0002040810204081ULL;
-            static constexpr u64_t mv = 0x8080808080808080ULL;
+            static constexpr u64_t mu = 0x8080808080808080ULL;
 
 #if defined(__BMI2__) || HAVE_USE_PEXT__
-            return _pext_u64(u.hi >> 64, H) << 48 | _pext_u64(u.hi & 0xffffffffffffffffULL, H) << 32 |
-                   _pext_u64(u.lo >> 64, H) << 16 | _pext_u64(u.lo & 0xffffffffffffffffULL, H);
+            return _pext_u64(u.hi >> 64, mu) << 48 | _pext_u64(u.hi & 0xffffffffffffffffULL, mu) << 32 |
+                   _pext_u64(u.lo >> 64, mu) << 16 | _pext_u64(u.lo & 0xffffffffffffffffULL, mu);
 #else
-            return ((u.hi >> 64) * M >> 32) & 0xff000000ULL | (u.hi * M  >> 40) & 0xff0000ULL |
-                   ((u.lo >> 64) * M >> 48) & 0x0000ff00ULL | (u.lo * M) >> 56;
+            return ((u.hi >> 64) * mp >> 32) & 0xff000000ULL | (u.hi * mp  >> 40) & 0xff0000ULL |
+                   ((u.lo >> 64) * mp >> 48) & 0x0000ff00ULL | (u.lo * mp) >> 56;
 #endif
         }
 
@@ -335,17 +335,17 @@ namespace dhttp
 
         dhttp_attr(inline) u32_t _mm256_movemask_epi8(const __m256i u)
         {
-            static constexpr u64_t M = 0x0002040810204081ULL;
-            static constexpr u64_t H = 0x8080808080808080ULL;
+            static constexpr u64_t mp = 0x0002040810204081ULL;
+            static constexpr u64_t mu = 0x8080808080808080ULL;
 
 #if defined(__BMI2__) && HAVE_USE_PEXT__
-            const u16_t x = static_cast<const u16_t>(_pext_u64(u.lo, H) << 8 | _pext_u64(u.vlo, H));
-            const u16_t y = static_cast<const u16_t>(_pext_u64(u.hi, H) << 8 | _pext_u64(u.vhi, H));
+            const u32_t x = _pext_u64(u.lo, mu) << 8 | _pext_u64(u.vlo, mu);
+            const u32_t y = _pext_u64(u.hi, mu) << 8 | _pext_u64(u.vhi, mu);
 #else
-            const u16_t x = static_cast<const u16_t>((((u.lo * M) >> 48) & 0xff00ULL) | ((u.vlo * M) >> 56));
-            const u16_t y = static_cast<const u16_t>((((u.hi * M) >> 48) & 0xff00ULL) | ((u.vhi * M) >> 56));
+            const u16_t x = ((((u.lo * mp) >> 48) & 0xff00ULL) | ((u.vlo * mp) >> 56));
+            const u32_t y = ((((u.hi * mp) >> 48) & 0xff00ULL) | ((u.vhi * mp) >> 56));
 #endif
-            return static_cast<const u32_t>(y) << 16 | x;
+            return y << 16 | x;
         }
 
         constexpr dhttp_attr(inline) u64_t _mm_cmpgtnlt_epi8(const __m256i v, u64_t a, u64_t b)
@@ -363,14 +363,15 @@ namespace dhttp
 
         dhttp_attr(inline) __m256i _mm256_cmpeq_epi8(const __m256i u, const __m256i v)
         {
-            static constexpr u64_t odd  = 0x100010001000100ULL;
-            static constexpr u64_t even = 0x001000100010001ULL;
+            static constexpr u64_t odd  = 0x0100010001000100ULL;
+            static constexpr u64_t even = 0x0001000100010001ULL;
+            static constexpr u64_t mu   = 0x8080808080808080ULL;
 
             return {
-                       ((((u.lo  ^ v.lo)  | even) - odd) | (((u.lo  ^ v.lo)  | odd) - even)) & (~(u.lo  ^ v.lo)  & H),
-                       ((((u.vlo ^ v.vlo) | even) - odd) | (((u.vlo ^ v.vlo) | odd) - even)) & (~(u.vlo ^ v.vlo) & H),
-                       ((((u.hi  ^ v.hi)  | even) - odd) | (((u.hi  ^ v.hi)  | odd) - even)) & (~(u.hi  ^ v.hi)  & H),
-                       ((((u.vhi ^ v.vhi) | even) - odd) | (((u.vhi ^ v.vhi) | odd) - even)) & (~(u.vhi ^ v.vhi) & H),
+                       ((((u.lo  ^ v.lo)  | even) - odd) | (((u.lo  ^ v.lo)  | odd) - even)) & (~(u.lo  ^ v.lo)  & mu),
+                       ((((u.vlo ^ v.vlo) | even) - odd) | (((u.vlo ^ v.vlo) | odd) - even)) & (~(u.vlo ^ v.vlo) & mu),
+                       ((((u.hi  ^ v.hi)  | even) - odd) | (((u.hi  ^ v.hi)  | odd) - even)) & (~(u.hi  ^ v.hi)  & mu),
+                       ((((u.vhi ^ v.vhi) | even) - odd) | (((u.vhi ^ v.vhi) | odd) - even)) & (~(u.vhi ^ v.vhi) & mu),
                    };
         }
 
