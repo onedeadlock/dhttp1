@@ -201,12 +201,13 @@ namespace dhttp
             return {_mm_cmpgt_epi8(v.lo, x), _mm_cmpgt_epi8(v.hi, x)};
         }
 
-        dhttp_attr(inline) __m256i _mm256_cmpglt_epi8(const __m256i v, const u8_t a)
+        dhttp_attr(inline) __m256i _mm256_cmpglt_epi8(const __m256i v, const u8_t a, const u8_t b)
         {
             static __m128i x = _mm_set1_epi8(a);
+            static __m128i y = _mm_set1_epi8(b);
             return {
-                _mm_and_si128(_mm_cmpgt_epi8(v.lo, x), _mm_cmplt_epi8(v.lo, x)),
-                _mm_and_si128(_mm_cmpgt_epi8(v.lo, x), _mm_cmplt_epi8(v.lo, x)),
+                _mm_and_si128(_mm_cmpgt_epi8(v.lo, x), _mm_cmplt_epi8(v.lo, y)),
+                _mm_and_si128(_mm_cmpgt_epi8(v.lo, x), _mm_cmplt_epi8(v.lo, y)),
             };
         }
 
@@ -434,14 +435,14 @@ namespace dhttp
             return U64(_mm256_movemask_epi8(u.hi)) << 32 | _mm256_movemask_epi8(u.lo);
         }
 
-        dhttp_attr(inline) constexpr __m512i_ _mm512_cmpgt1_epi8(const __m512i_ v, const u8_t a)
+        dhttp_attr(inline) constexpr __m512i_ _mm512_cmpgt1_epi8_(const __m512i_ v, const u8_t a)
         {
             return {_mm256_cmpgt1_epi8(v.lo, a), _mm256_cmpgt1_epi8(v.hi, a)};
         }
 
-        dhttp_attr(inline) constexpr __m512i_ _mm512_cmpglt_epi8(const __m512i_ v, const u8_t a)
+        dhttp_attr(inline) constexpr __m512i_ _mm512_cmpglt_epi8_(const __m512i_ v, const u8_t a, const u8_t b)
         {
-            return {_mm256_cmpglt_epi8(v.lo, a), _mm256_cmpglt_epi8(v.hi, a)};
+            return {_mm256_cmpglt_epi8(v.lo, a, b), _mm256_cmpglt_epi8(v.hi, a, b)};
         }
 
         dhttp_attr(inline) __m512i_ _mm512_cmpeq_epi8_(const __m512i_ u, const __m512i_ v)

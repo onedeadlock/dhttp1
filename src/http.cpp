@@ -17,20 +17,6 @@ private:
         return true;
     }
 
-   dhttp_attr(always_inline) uint64_t classify_rfc_scalar(const dhttp::__m512i_ &v) const
-    {
-        const uint8_t *const x = reinterpret_cast<const uint8_t *const>(&v);
-        auto &bitmap = dhttp::tables::bitmap256_valid_request_charset;
-
-        auto mp = [&](const uint8_t *x, const uint8_t i) -> const uint8_t
-        {
-            return bitmap[x[i + 0]] << 0 | bitmap[x[i + 1]] << 1 | bitmap[x[i + 2]] << 2 | bitmap[x[i + 3]] << 3 |
-                   bitmap[x[i + 4]] << 4 | bitmap[x[i + 5]] << 5 | bitmap[x[i + 6]] << 6 | bitmap[x[i + 7]] << 7;
-        };
-        return U32(mp(x, 0U)) << 0U | U32(mp(x, 8U)) << 8U | U32(mp(x, 16)) << 16 | U32(mp(x, 24)) << 24 |
-               U64(mp(x, 32)) << 32 | U64(mp(x, 40)) << 40 | U64(mp(x, 48)) << 48 | U64(mp(x, 56)) << 56;
-    }
-
    dhttp_attr(always_inline) bool has_obstext(const dhttp::__m512i_ &v) const
     {
         static const dhttp::__m512i_ m  = dhttp::_mm512_set1_epi8_(0x80);
@@ -44,7 +30,9 @@ private:
         static const dhttp::__m512i_ hi = dhttp::_mm512_loadu_si512_(dhttp::table::bitmap256_valid_request_charset_shufb + 64);
         return dhttp::_mm512_movemask_epi8_(dhttp::_mm512_and_si512_(dhttp::_mm512_shuffle_epi8_(lo, v), dhttp::_mm512_shuffle_epi8_(hi, dhttp::_mm512_srli_epi64_(v, 4)))); // valid rfc chars
 #else
-        return classify_rfc_scalar(v);
+        return dhttp::_mm512_movemask_epi8_(
+            dhttp::_mm512_and_si512_(dhttp::_mm512_cmpgt1_epi8_(dhttp::_mm512_and_si512_(v, dhttp::_mm512_set1_epi8_('\xf')), '\x0'),
+                                     dhttp::_mm512_cmpglt_epi8_(dhttp::_mm512_srli_epi64_(v, 4), '\x1', '\x9')));
 #endif
     }
 
