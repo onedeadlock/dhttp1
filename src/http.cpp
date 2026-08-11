@@ -1,52 +1,60 @@
 #include "http.hpp"
-using namespace dhttp;
 
 #define is ==
 #define isnot !=
 
-class dhttp1
+class dhttp::dhttp1
 {
     using u64_t = uint64_t;
     using u32_t = uint32_t;
     using u16_t = uint16_t;
     using u8_t  = uint8_t;
 
+    using state_t = struct
+    {
+        simd v; // keep vector lanes for reuse (helpful in scalar falllback)
+        uint16_t line_start, line_end;
+        uint16_t pos = 0, j = 0;  // request line field count [0, 3)
+        u8_t state = 0;           // header state
+        bool decode_once = true;  // true if decoding of request/status-line is pending (not started)
+        bool trailing_sp = false; // carry last trailing sp as a single bit boolean
+        bool done = false;
+    };
+
 private:
-    dhttp_attr(always_inline) bool reset(dhttp::state_t &state) const
+    dhttp_attr(always_inline) bool reset(state_t &state) const
     {
         return true;
     }
 
-   dhttp_attr(always_inline) bool has_obstext(const dhttp::__m512i_ &v) const
+   dhttp_attr(always_inline) bool has_obstext(simd &v) const
     {
-        static const dhttp::__m512i_ m  = dhttp::_mm512_set1_epi8_(0x80);
-        return dhttp::_mm512_testz_si512_(dhttp::_mm512_and_si512_(v, m));
+        static simd x(0x80);
+        return (v && x).testzero();
     }
 
-   dhttp_attr(always_inline) u64_t classify_rfc(const dhttp::__m512i_ &v) const
+   dhttp_attr(always_inline) u64_t classify_rfc(simd &v) const
     {
-#if HAVE_SHUFLE__
-        static const dhttp::__m512i_ lo = dhttp::_mm512_loadu_si512_(dhttp::table::bitmap256_valid_request_charset_shufb);
-        static const dhttp::__m512i_ hi = dhttp::_mm512_loadu_si512_(dhttp::table::bitmap256_valid_request_charset_shufb + 64);
-        return dhttp::_mm512_movemask_epi8_(dhttp::_mm512_and_si512_(dhttp::_mm512_shuffle_epi8_(lo, v), dhttp::_mm512_shuffle_epi8_(hi, dhttp::_mm512_srli_epi64_(v, 4)))); // valid rfc chars
+#if HAVE_SHUFFLE__
+        static const simd lo = simd(dhttp::tables::bitmap256_valid_request_charset_shufb);
+        static const simd hi = simd(dhttp::tables::bitmap256_valid_request_charset_shufb + 64);
+        return (simd::shufb(lo, v) & simd::shufb(hi, v >> 4)).movemask(); // valid rfc chars
 #else
-        return dhttp::_mm512_movemask_epi8_(
-            dhttp::_mm512_and_si512_(dhttp::_mm512_cmpgt1_epi8_(dhttp::_mm512_and_si512_(v, dhttp::_mm512_set1_epi8_('\xf')), '\x0'),
-                                     dhttp::_mm512_cmpglt_epi8_(dhttp::_mm512_srli_epi64_(v, 4), '\x1', '\x9')));
+        return (((simd('\xf') && v) > '\x0') && simd::cmpglt(v >> 4, '\x1', '\x9')).movemask();
 #endif
     }
 
-   dhttp_attr(always_inline) void dump_state(dhttp::state_t &state, bool sp, bool cr, bool done) const
+   dhttp_attr(always_inline) void dump_state(state_t &state, bool sp, bool cr, bool done) const
     {
         state.done   = done;  // done
         state.state |= cr; // save trailing CR
         state.trailing_sp = sp; // save trailing SP
     }
 
-    int extract_fields(dhttp::header_t &input, dhttp::state_t &state, u64_t lf, u64_t cr, u64_t crlf, u64_t col)
+    int extract_fields(dhttp::header_t &input, state_t &state, u64_t lf, u64_t cr, u64_t crlf, u64_t col)
     {
-        static const dhttp::__m512i_ SP = dhttp::_mm512_set1_epi8_(dhttp::SP);
-        const u64_t sp = dhttp::_mm512_movemask_epi8_(dhttp::_mm512_cmpeq_epi8_(state.v, SP));
+        static const simd SP(dhttp::SP);
+        const u64_t sp = (state.v == SP).movemask();
 
         const u64_t valid_sp = ~static_cast<const u64_t>(state.trailing_sp) & trim(sp); // reject multiple sp
         const u64_t valid_char = classify_rfc(state.v); // valid tokens
@@ -131,22 +139,23 @@ private:
         }
     }
 
-    int parse_header(dhttp::header_t &input, dhttp::state_t &state)
+    int parse_header(dhttp::header_t &input, state_t &state)
     {
-        const dhttp::__m512i_ LF  = dhttp::_mm512_set1_epi8_(dhttp::LF);
-        const dhttp::__m512i_ CR  = dhttp::_mm512_set1_epi8_(dhttp::CR);
-        const dhttp::__m512i_ COL = dhttp::_mm512_set1_epi8_(dhttp::COL);
+        const simd LF  = dhttp::LF;
+        const simd CR  = dhttp::CR;
+        const simd COL = dhttp::COL;
 
         const size_t n = (input.size + (size_t)63) & ~(size_t)63; // align read/load size to 64
 
         for (size_t j = 0; j < n; j += 64)
         {
             u8_t *b = input.recvb.recvbuf + j;
-            state.v = dhttp::_mm512_loadu_si512_(b);
+            state.v = b;
 
-            u64_t cr   = dhttp::_mm512_movemask_epi8_(dhttp::_mm512_cmpeq_epi8_(state.v, CR));
-            u64_t lf   = dhttp::_mm512_movemask_epi8_(dhttp::_mm512_cmpeq_epi8_(state.v, LF));
-            u64_t col  = dhttp::_mm512_movemask_epi8_(dhttp::_mm512_cmpeq_epi8_(state.v, COL));
+            u64_t cr   = (state.v == dhttp::CR).movemask();
+            u64_t lf   = (state.v == dhttp::CR).movemask();
+            u64_t col  = (state.v == dhttp::CR).movemask();
+            u64_t col  = (state.v == dhttp::COL).movemask();
             u64_t crlf = lf & (cr >> 1); // \r\n\r\n
 
             if (unlikely(extract_fields(input, state, lf, cr, crlf, col) < 0))
