@@ -16,7 +16,6 @@
 #        define HAVE__SSE4_2__ 1
 #    endif
 #    include <immintrin.h>
-#endif
 #elif defined(_ARM_NEON)
 #    if defined(__arm__) || (defined(__ARM_ARCH) && __ARM_ARCH == 1)
 #       include <arm_neon.h>
@@ -111,11 +110,12 @@ namespace dhttp
         u16_t pos         = 0; // absolute index of last byte parsed
         u16_t line_start  = 0; // start index of token
         u16_t line_end    = 0; // end index of token
-        u16_t j           = 0; // request line field count [0, 3)
+        u16_t j           = 3; // request line field count (0, 3)
         u8_t  state       = 0; // general header state
         bool  parse_uinit = 1; // true if decoding of request/status-line is pending (not started)
         bool  trailing_sp = 0; // carry of trailing sp
-        bool  done        = 0;
+        bool  trailing_cr = 0;
+        bool  req_line    = 0;
     };
 
 
@@ -453,8 +453,8 @@ namespace dhttp
         }
         simd64 &operator=(int v)
         {
-            lo = _mm256_set1_epi8(v);
-            hi = _mm256_set1_epi8(v);
+            lo = _mm256_set1_epi8(staic_cast<u8_t>(v & 0xff));
+            hi = _mm256_set1_epi8(stati_cast<u8_t>(v & 0xff));
             return *this;
         }
         
