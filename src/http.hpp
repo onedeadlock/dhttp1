@@ -1,9 +1,8 @@
 #ifndef DHTTP_H
 #define DHTTP_H
 #include <cstdint>
-#include <csignal>
 #include <cstring>
-// #include <memory>
+#include <cstddef>
 
 #if defined(__AVX2__) || defined(__SSSE3__) || defined(__SSE4_2__) || defined(__SSE2__)
 #    if defined(__AVX2__)
@@ -39,7 +38,7 @@
 namespace dhttp
 {
     template <typename base> struct simd64;
-    class dhttp1;
+    class http;
 
     using u64_t = uint64_t;
     using u32_t = uint32_t;
@@ -68,8 +67,8 @@ namespace dhttp
 
     typedef struct
     {
-        uint16_t line_start;
-        uint16_t line_end;
+        uint16_t start;
+        uint16_t end;
     } req_t;
 
     typedef struct
@@ -80,11 +79,12 @@ namespace dhttp
 
     typedef struct
     {
-        // [3] = method
+        /// N     req     res
+        // [3] = method/version
         // [2] = uri/status
         // [1] = version/msg
         // [0] = 0
-        req_t request_line[4];
+        req_t request_line[2][4];
     } request_line_t;
 
     typedef struct
