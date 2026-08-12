@@ -44,7 +44,7 @@ private:
              ///////////////////////////////////////////////////
              ////////// PARSE REQUEST-STATUS LINE //////////////
              ///////////////////////////////////////////////////
-            if (state.state & dhttp::STATE_TRAILING_CR)
+            if (state.trailing_cr is true)
             {
                 if (not (lf & 0x01))
                     return -1;
