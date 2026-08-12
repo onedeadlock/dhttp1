@@ -46,13 +46,13 @@ private:
              ///////////////////////////////////////////////////
             if (state.state & dhttp::STATE_TRAILING_CR)
             {
-                if (lf & 0x01)
+                if (not (lf & 0x01))
                     return -1;
                 state.req_line = true;
                 goto post_req_line;
             }
             
-            if (unlikely(state.pos < (dhttp::REQUEST_LINE_MAX_SIZE + 64)))
+            if (unlikely(state.pos < dhttp::REQUEST_LINE_MAX_SIZE))
                 return -1;
 
             // reject blank line at the start of request/response
