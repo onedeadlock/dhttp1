@@ -190,9 +190,9 @@ namespace dhttp
                 u8_t *b = input.recvb.recvbuf + j;
                 state.mv = b;
 
-                u64_t lf = dhttp::simd::movemask(state.mv == LF);
-                u64_t cr = dhttp::simd::movemask(state.mv == CR);
-                u64_t col = dhttp::simd::movemask(state.mv == CL);
+                u64_t lf   = dhttp::simd::movemask(state.mv == LF);
+                u64_t cr   = dhttp::simd::movemask(state.mv == CR);
+                u64_t col  = dhttp::simd::movemask(state.mv == CL);
                 u64_t crlf = lf & (cr >> 1);
 
                 if (unlikely(extract_fields(input, state, lf, cr, crlf, col) < 0))
