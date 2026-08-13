@@ -83,8 +83,8 @@ namespace dhttp
         // [3] = method/version
         // [2] = uri/status
         // [1] = version/msg
-        // [0] = 0
-        req_t request_line[2][4];
+        // [0] = start index
+        req_t request_line[4];
     } request_line_t;
 
     typedef struct

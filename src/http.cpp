@@ -6,30 +6,32 @@
 
 namespace dhttp
 {
-    enum req_type
-    {
-        request  = 0,
-        response = 1
-    };
+    struct _req_type {
+        using req_index = const int (&)[];
+        enum type : bool {
+            request  = 0,
+            response = 1,
+        };
 
-    enum req_index
-    {
-        req_method  = 3,
-        req_uri     = 2,
-        req_version = 1,
-        res_method  = 3,
-        res_uri     = 2,
-        res_version = 1,
+        static constexpr int index[2][3] = {
+            ////////////////////////////////////////////////////
+            //// REQUEST {req_method, req_uri, req_version} ////
+            ////////////////////////////////////////////////////
+            {3, 2, 1},
+            ////////////////////////////////////////////////////
+            //// RESPONSE {req_version, req_stat, req_msg} /////
+            ////////////////////////////////////////////////////
+            {1, 2, 3},
+        };
     };
 
     class dhttp::http
     {
     public:
-        req_type type;
-        http() : method{0}, status_code{0}, minor_version{0}, start_index{0}, type{req_type::request} {}
+        dhttp::_req_type::type req_type;
+        http() : start_index{0}, req_type{dhttp::_req_type::type::request} {}
 
     private:
-        u8_t method[10], status_code, minor_version;
         u16_t start_index; // buffer start index
 
         bool done = true;
@@ -45,7 +47,7 @@ namespace dhttp
 #if defined(HAVE_SHUFFLE__)
             static const dhttp::simd lo{dhttp::tables::bitmap_valid_charset};
             static const dhttp::simd hi{dhttp::tables::bitmap_valid_charset + 64};
-            return dhttp::simd::movemask(dhttp::simd::shufb(lo, v) & dhttp::simd::shufb(hi, v >> 4)); // valid rfc chars
+            return dhttp::simd::movemask(dhttp::simd::shufb(lo, v) & dhttp::simd::shufb(hi, v >> 4));
 #else
             return dhttp::simd::movemask(((dhttp::simd('\xf') & v) > '\x0') & dhttp::simd::cmpglt(v >> 4, '\x1', '\x9'));
 #endif
@@ -58,18 +60,16 @@ namespace dhttp
             return mask == (*static_cast<const u64_t *>(ver_string) & 0x00ffffffffffffff);
         }
 
-        bool req_vtag_is_required_size(const req_t (&req)[], req_type& type)
+        u16_t req_size(const dhttp::req_t (&req)[], const int i)
         {
-            static constexpr u16_t req_version_required_size = 8; // strlen(HTTP/1.x)
-            const u16_t size = type is req_type::request ? req[req_index::req_version].end - req[req_index::req_uri].end
-                                                         : req[req_index::req_version].end - http::start_index;
-            return size == req_version_required_size;
+            return http::req_type is dhttp::_req_type::type::request ? (req[i - 0].end - req[i + 1].end)
+                                                                     : (req[i - 1].end - req[i - 0].end);
         }
 
-        bool req_version_tag(const req_t (&req)[], const u8_t *buf, req_type& type)
+        bool req_version_tag(const dhttp::req_t (&req)[], const u8_t *buf, const dhttp::_req_type::req_index& i)
         {
-            auto &r = req[req_index::req_version];
-            return req_vtag_is_required_size(req, type) and req_vtag_is_http_1(buf + req[req_index::req_version].end);
+            static constexpr u16_t req_version_required_size = 8; // strlen(HTTP/1.x)
+            return (req_size(req, i[0]) == req_version_required_size) and req_vtag_is_http_1(buf + req[i[0]].end);
         }
 
         int extract_fields(dhttp::header_t &input, state_t &state, u64_t lf, u64_t cr, u64_t crlf, u64_t col)
@@ -93,7 +93,7 @@ namespace dhttp
                     goto post_req_line;
                 }
 
-                if (unlikely(state.pos < (dhttp::REQUEST_LINE_MAX_SIZE + 64)))
+                if (unlikely(state.pos < dhttp::REQUEST_LINE_MAX_SIZE))
                     return -400;
 
                 // reject blank line at the start of request/response
@@ -110,7 +110,7 @@ namespace dhttp
                 u64_t mask  = sp | cr | lf;
                 u64_t umask = mask & blsr(cr | lf);
 
-                req_t(&req)[] = input.request.request_line[http::type];
+                dhttp::req_t(&req)[] = input.request.request_line;
                 for (; umask and state.j; state.j--)
                 {
                     req[state.j].end = state.pos + tzcnt(umask);
@@ -129,13 +129,13 @@ namespace dhttp
 
                 state.pos += req[state.j + 1].end;
                 state.req_line = true;                 // done
-                if (state.j isnot 0 or req_version_tag(req, input.recvb.recvbuf, http::type))
+                if (state.j isnot 0 or req_version_tag(req, input.recvb.recvbuf, dhttp::_req_type::index[req_type]))
                     return -400;
             }
 
-        ///////////////////////////////////////////////////
-        //////////////// PARSE HEADERS ////////////////////
-        post_req_line:
+            ///////////////////////////////////////////////////
+            //////////////// PARSE HEADERS ////////////////////
+            post_req_line:
             ///////////////////////////////////////////////////
 
             if (unlikely(state.state & dhttp::RESUME))
@@ -183,7 +183,7 @@ namespace dhttp
             static const dhttp::simd CR{'\xd'};
             static const dhttp::simd CL{'\x3a'};
 
-            const size_t n = (input.size + (size_t)63) & ~(size_t)63; // align read/load size to 64
+            const size_t n = (input.size + 63) & ~(size_t)63; // align read/load size to 64
 
             for (size_t j = 0; j < n; j += 64)
             {
