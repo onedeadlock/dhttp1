@@ -62,8 +62,8 @@ namespace dhttp
 
         u16_t req_size(const dhttp::req_t (&req)[], const int i)
         {
-            return http::req_type is dhttp::_req_type::type::request ? (req[i - 0].end - req[i + 1].end)
-                                                                     : (req[i - 1].end - req[i - 0].end);
+            return http::req_type is dhttp::_req_type::type::request ? (req[i - 0].end - req[i + 1].end) - 1
+                                                                     : (req[i - 1].end - req[i - 0].end) -1; // -1 for the sp seperator
         }
 
         bool req_version_tag(const dhttp::req_t (&req)[], const u8_t *buf, const dhttp::_req_type::req_index& i)
