@@ -6,6 +6,8 @@
 
 namespace dhttp
 {
+    bool http_1 = true;
+
     auto tzmask  = [](u64_t x){ return ~x & x - 1; }
     auto blsmask = [](u64_t x){ return  x ^ x - 1; }
 
@@ -20,11 +22,11 @@ namespace dhttp
             ////////////////////////////////////////////////////
             //// REQUEST {req_method, req_uri, req_version} ////
             ////////////////////////////////////////////////////
-            {3, 2, 1},
+            {1, 2, 3},
             ////////////////////////////////////////////////////
             //// RESPONSE {req_version, req_stat, req_msg} /////
             ////////////////////////////////////////////////////
-            {1, 2, 3},
+            {3, 2, 1},
         };
     };
 
@@ -135,7 +137,7 @@ namespace dhttp
                 //////////////////////////////////////////////
                 state.pos += req[state.j + 1].end;
                 state.req_line = true;                 // done
-                if (state.j isnot 0 or req_version_tag(req, input.recvb.recvbuf, dhttp::_req_type::index[req_type]))
+                if (state.j isnot 0 or req_version_tag(req, input.recvb.recvbuf, dhttp::_req_type::index[req_type]) isnot dhttp::http_1)
                     return -400;
             }
 
