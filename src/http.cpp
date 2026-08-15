@@ -6,6 +6,9 @@
 
 namespace dhttp
 {
+    auto tzmask  = [](u64_t x){ return ~x & x - 1; }
+    auto blsmask = [](u64_t x){ return  x ^ x - 1; }
+
     struct _req_type {
         using req_index = const int (&)[];
         enum type : bool {
@@ -104,11 +107,11 @@ namespace dhttp
                     return -400;
                 }
 
-                if ((~(valid_char | valid_sp) | lf | (cr & ~0x8000000000000000ULL)) & -lsb(crlf))
+                if ((~(valid_char | valid_sp) | lf | (cr & ~0x8000000000000000ULL)) & tzmask(crlf))
                     return -400;
 
                 u64_t mask  = sp | cr | lf;
-                u64_t umask = mask & blsr(cr | lf);
+                u64_t umask = mask & blsmask(cr | lf);
 
                 dhttp::req_t(&req)[] = input.request.request_line;
                 for (; umask and state.j; state.j--)
@@ -127,6 +130,9 @@ namespace dhttp
                 mask &= ~umask;
                 crlf &= mask, lf &= mask, cr &= mask;
 
+                //////////////////////////////////////////////
+                post_req_line:
+                //////////////////////////////////////////////
                 state.pos += req[state.j + 1].end;
                 state.req_line = true;                 // done
                 if (state.j isnot 0 or req_version_tag(req, input.recvb.recvbuf, dhttp::_req_type::index[req_type]))
@@ -135,7 +141,6 @@ namespace dhttp
 
             ///////////////////////////////////////////////////
             //////////////// PARSE HEADERS ////////////////////
-            post_req_line:
             ///////////////////////////////////////////////////
 
             if (unlikely(state.state & dhttp::RESUME))
