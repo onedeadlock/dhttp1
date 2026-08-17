@@ -4,7 +4,13 @@
 #define isnot !=
 #define inline __attribute__((always_inline)) inline
 
-namespace dhttp
+#ifdef INCLUDE_UNDERSCORE
+#    define IU(x) (x)
+#else
+#    define IU(x) 0
+#endif
+
+ namespace dhttp
 {
     bool http_1 = true;
 
@@ -17,7 +23,7 @@ namespace dhttp
 
 
     /////////////////////////////////////////////
-    // ASCII LETTERS (C > 65/97 AND C < 90/122 
+    // ASCII LETTERS (C > 64/96 AND C < 91/123) 
     ////////////////////////////////////////////
     inline u64_t ascii_letters(const u64_t v)
     {
@@ -27,7 +33,7 @@ namespace dhttp
     }
 
     /////////////////////////////////////////////
-    // ASCII NUMBERS (C > 48 AND C < 57 
+    // ASCII NUMBERS (C > 47 AND C < 58) 
     ////////////////////////////////////////////
     inline u64_t ascii_numbers(const u64_t v)
     {
@@ -42,6 +48,28 @@ namespace dhttp
         static constexpr u64_t lo = 0x0001000100010001ULL;
         static constexpr u64_t h = static_cast<u64_t>('\x2d') * 0x101010101010101ULL;
         return (((v ^ h | lo) - hi) | ((v ^ h | hi) - lo)) & (~(v ^ h) & 0x8080808080808080ULL);
+    }
+
+#if defined(INCLUDE_UNDERSCORE)
+    inline u64_t ascii_underscore(const u64_t v)
+    {
+        static constexpr u64_t hi = 0x0100010001000100ULL;
+        static constexpr u64_t lo = 0x0001000100010001ULL;
+        static constexpr u64_t h = static_cast<u64_t>('\x5f') * 0x101010101010101ULL;
+        return (((v ^ h | lo) - hi) | ((v ^ h | hi) - lo)) & (~(v ^ h) & 0x8080808080808080ULL);
+    }
+#endif
+
+     inline bool ascii_isalpha_plus(const int v)
+    {
+        // a-zA-z, -, 0-9, _
+        return ((v & 0xdf > 0x40) & (v & 0xdf < 0x5b)) or (v == 0x2d) or (v > 0x2f & v < 0x3a) or IU(v == 0x5f);
+    }
+
+    inline u64_t ascii_batch_isalpha_plus(const u64_t v)
+    {
+        // a-zA-z, -, 0-9, _
+        return ascii_letters(v) | ascii_numbers(v) | ascii_hyphen(v) | IU(ascii_underscore(v));
     }
 
     struct _req_type
@@ -118,17 +146,19 @@ namespace dhttp
         }
 
 
-        inline bool req_header_name(const dhttp::req_t &req_name, const void *buf)
+        inline bool req_header_name(const uint8_t *buf, const uint16_t len)
         {
             bool valid = true;
-
-            while (valid)
-            {
-                const u64_t v = *reinterpret_cast<const u64_t *>(buf + req_name.pos);
-                const u64_t h = ascii_hyphen(v);
-                valid = not (~ascii_letters(v) ^ h) and as; // ^h removes '-' from invalid chars; blsr removes last '-' any more than this is error
-            }
-        }
+            // Only a-zA-Z, -, (and _ but not recommended)
+            const u16_t e = len >> 3;
+            for (u16_t j = 0; j < e and valid; j++)
+                valid = not ~ascii_batch_isalpha_plus(*(reinterpret_cast<const u64_t *>(buf) + j));
+            // len < 8
+            const u64_t r = len & 7;
+            if (likely(valid and r))
+                return r == 1 ? ascii_isalpha_plus(*buf) : ~ascii_batch_isalpha_plus(*(reinterpret_cast<const u64_t *>(buf) + e)) & ((1U << r) - 1); // only check 'r' bytes
+            return valid;
+    }
 
         int extract_fields(dhttp::header_t &input, state_t &state, u64_t lf, u64_t cr, u64_t crlf, u64_t col)
         {
@@ -211,7 +241,7 @@ namespace dhttp
 
                 state.resume = false;
                 // unset colon within values; TODO: false colon is between first lf/cr and next lf/cr not just after first
-                col &= ~xlsfill(first_lf);
+                col &= xlsfill(first_lf);
                 lf  &= ~first_lf;
             }
 
@@ -230,8 +260,10 @@ namespace dhttp
 
                 /////////////////////////////////////////////
                 ////////// VALIDATE HEADER NAME /////////////
-                req_header_name(input.hf.req_buf[state.j], input.recvb.recvbuf);
+                const req_t name = input.hf.req_buf[state.j];
+                req_header_name(reinterpret_cast<const uint8_t *>(input.recvb.recvbuf) + name.pos, name.len);
                 /////////////////////////////////////////////
+                
                 col &= xlsfill(eol);
                 crlf  &= ~eol;
             }
@@ -272,3 +304,6 @@ namespace dhttp
 }
 
 #undef inline
+#undef is
+#undef isnot
+#undef IU
