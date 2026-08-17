@@ -259,11 +259,14 @@
                 uint16_t pos_eol = tzcnt(eol);
 
                 /////////////////////////////////////////////
-                ////////// VALIDATE HEADER NAME /////////////
-                const req_t name = input.hf.req_buf[state.j];
-                req_header_name(reinterpret_cast<const uint8_t *>(input.recvb.recvbuf) + name.pos, name.len);
+                //////////////// HEADER NAME ////////////////
+                req_t& name = input.hf.req_buf[state.j];
+                name.pos    = state.pos;
+                name.len    = state.j + pos_col;
+                if (not req_header_name(reinterpret_cast<const uint8_t *>(input.recvb.recvbuf) + name.pos, name.len))
+                    return -400;
                 /////////////////////////////////////////////
-                
+
                 col &= xlsfill(eol);
                 crlf  &= ~eol;
             }
