@@ -15,7 +15,37 @@ namespace dhttp
     auto xlsfill = [](u64_t x){ return  x ^ -x; }; // ~blsfill
     auto tzcnt   = [](u64_t v){ return __builtin_ctzll(v); };
 
-    struct _req_type {
+
+    /////////////////////////////////////////////
+    // ASCII LETTERS (C > 65/97 AND C < 90/122 
+    ////////////////////////////////////////////
+    inline u64_t ascii_letters(const u64_t v)
+    {
+        static constexpr u64_t A = static_cast<u64_t>('\x7f' - '\x40') * 0x101010101010101ULL;
+        static constexpr u64_t Z = static_cast<u64_t>('\x7f' + '\x5b') * 0x101010101010101ULL;
+        return (Z - (v & 0x5f5f5f5f5f5f5f5fULL)) & (A + (v & 0x5f5f5f5f5f5f5f5fULL)) & (~v & 0x8080808080808080ULL); //  'a' & 0xdf -> 'A' and (v & 0xdf) & 0x7f -> v & (0xdf & 0x7f) -> v & 0x5f
+    }
+
+    /////////////////////////////////////////////
+    // ASCII NUMBERS (C > 48 AND C < 57 
+    ////////////////////////////////////////////
+    inline u64_t ascii_numbers(const u64_t v)
+    {
+        static constexpr u64_t _0 = static_cast<u64_t>('\x7f' - '\x2f') * 0x101010101010101ULL;
+        static constexpr u64_t _9 = static_cast<u64_t>('\x7f' + '\x3a') * 0x101010101010101ULL;
+        return (_9 - (v & 0x7f7f7f7f7f7f7f7fULL)) & (_0 + (v & 0x7f7f7f7f7f7f7f7fULL)) & (~v & 0x8080808080808080ULL);
+    }
+
+    inline u64_t ascii_hyphen(const u64_t v)
+    {
+        static constexpr u64_t hi = 0x0100010001000100ULL;
+        static constexpr u64_t lo = 0x0001000100010001ULL;
+        static constexpr u64_t h = static_cast<u64_t>('\x2d') * 0x101010101010101ULL;
+        return (((v ^ h | lo) - hi) | ((v ^ h | hi) - lo)) & (~(v ^ h) & 0x8080808080808080ULL);
+    }
+
+    struct _req_type
+    {
         using req_index = const int (&)[];
         enum type : int {
             request  = 0,
@@ -87,33 +117,16 @@ namespace dhttp
             return (req_size(req, i[0]) == req_version_required_size) and req_version_is_http_1(buf + req[i[0]].pos);
         }
 
-        inline u64_t ascii_letters(const u64_t v)
-        {
-            static constexpr u64_t a = static_cast<u64_t>('\x7f' - '\x60') * 0x101010101010101ULL;
-            static constexpr u64_t z = static_cast<u64_t>('\x7f' + '\x7b') * 0x101010101010101ULL;
-            static constexpr u64_t A = static_cast<u64_t>('\x7f' - '\x40') * 0x101010101010101ULL;
-            static constexpr u64_t Z = static_cast<u64_t>('\x7f' + '\x5b') * 0x101010101010101ULL;
-            const u64_t f7 = v & 0x7f7f7f7f7f7f7f7fULL;
-            const u64_t e0 = ~v & 0x8080808080808080ULL;
-            return ((z - f7) & (a + f7) & e0) ^ ((Z - f7) & (A + f7) & e0);
-        };
-
-        auto ascii_hyphen(const u64_t v)
-        {
-            static constexpr u64_t hi = 0x0100010001000100ULL;
-            static constexpr u64_t lo = 0x0001000100010001ULL;
-            static constexpr u64_t h = static_cast<u64_t>('\x2d') * 0x101010101010101ULL;
-            const u64_t x = v ^ h;
-            return (((x | lo) - hi) | ((x  | hi) - lo)) & (~x & 0x8080808080808080ULL);
-        };
 
         inline bool req_header_name(const dhttp::req_t &req_name, const void *buf)
         {
-            while (true)
+            bool valid = true;
+
+            while (valid)
             {
                 const u64_t v = *reinterpret_cast<const u64_t *>(buf + req_name.pos);
-                if (~ascii_letters(v) ^ ascii_hyphen(v))
-                    return 0;
+                const u64_t h = ascii_hyphen(v);
+                valid = not (~ascii_letters(v) ^ h) and as; // ^h removes '-' from invalid chars; blsr removes last '-' any more than this is error
             }
         }
 
