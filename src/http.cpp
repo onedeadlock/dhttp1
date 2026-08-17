@@ -8,12 +8,16 @@ namespace dhttp
 {
     bool http_1 = true;
 
-    auto tzmask  = [](u64_t x){ return ~x & x - 1; }
-    auto blsmask = [](u64_t x){ return  x ^ x - 1; }
+    auto tzmask  = [](u64_t x){ return ~x & x - 1; };
+    auto blsmask = [](u64_t x){ return  x ^ x - 1; };
+    auto blsr    = [](u64_t x){ return  x & x - 1; };
+    auto blsfill = [](u64_t x){ return  x | x - 1; };
+    auto xlsfill = [](u64_t x){ return  x ^ -x; }; // ~blsfill
+    auto tzcnt   = [](u64_t v){ return __builtin_ctzll(v); };
 
     struct _req_type {
         using req_index = const int (&)[];
-        enum type : bool {
+        enum type : int {
             request  = 0,
             response = 1,
         };
@@ -34,6 +38,7 @@ namespace dhttp
     {
     public:
         dhttp::_req_type::type req_type;
+        int version = 9999999;
         http() : start_index{0}, req_type{dhttp::_req_type::type::request} {}
 
     private:
@@ -58,43 +63,85 @@ namespace dhttp
 #endif
         }
 
-        bool req_vtag_is_http_1(const void *ver_string)
+        inline int req_version(const uint8_t i)
+        {
+            return (this->version = i ^ '\x30') < 10;
+        }
+
+        inline bool req_version_is_http_1(const void *ver_string)
         {
             static constexpr u64_t mask = U64('\x48') | U64('\x54') << 8 | U64('\x54') << 16 | U64('\x50') << 24 |
                                           U64('\x2f') << 32 | U64('\x2e') << 40 | U64('\x31') << 48; // H  T  T  P  /  1  .
-            return mask == (*static_cast<const u64_t *>(ver_string) & 0x00ffffffffffffff);
+            return mask == *reinterpret_cast<const u64_t *>(ver_string) & 0x00ffffffffffffff and req_version(reinterpret_cast<const uint8_t *>(ver_string)[7]);
         }
 
-        u16_t req_size(const dhttp::req_t (&req)[], const int i)
+        inline u16_t req_size(const dhttp::req_t (&req)[], const int i)
         {
-            return http::req_type is dhttp::_req_type::type::request ? (req[i - 0].end - req[i + 1].end) - 1
-                                                                     : (req[i - 1].end - req[i - 0].end) - 1; // -1 for the sp seperator
+            return http::req_type is dhttp::_req_type::type::request ? (req[i - 0].pos - req[i + 1].pos) - 1
+                                                                     : (req[i - 1].pos - req[i - 0].pos) - 1; // -1 for the sp seperator
         }
 
-        bool req_version_tag(const dhttp::req_t (&req)[], const u8_t *buf, const dhttp::_req_type::req_index& i)
+        inline bool req_version_tag(const dhttp::req_t (&req)[], const void *buf, const dhttp::_req_type::req_index& i)
         {
             static constexpr u16_t req_version_required_size = 8; // strlen(HTTP/1.x)
-            return (req_size(req, i[0]) == req_version_required_size) and req_vtag_is_http_1(buf + req[i[0]].end);
+            return (req_size(req, i[0]) == req_version_required_size) and req_version_is_http_1(buf + req[i[0]].pos);
+        }
+
+        inline u64_t ascii_letters(const u64_t v)
+        {
+            static constexpr u64_t a = static_cast<u64_t>('\x7f' - '\x60') * 0x101010101010101ULL;
+            static constexpr u64_t z = static_cast<u64_t>('\x7f' + '\x7b') * 0x101010101010101ULL;
+            static constexpr u64_t A = static_cast<u64_t>('\x7f' - '\x40') * 0x101010101010101ULL;
+            static constexpr u64_t Z = static_cast<u64_t>('\x7f' + '\x5b') * 0x101010101010101ULL;
+            const u64_t f7 = v & 0x7f7f7f7f7f7f7f7fULL;
+            const u64_t e0 = ~v & 0x8080808080808080ULL;
+            return ((z - f7) & (a + f7) & e0) ^ ((Z - f7) & (A + f7) & e0);
+        };
+
+        auto ascii_hyphen(const u64_t v)
+        {
+            static constexpr u64_t hi = 0x0100010001000100ULL;
+            static constexpr u64_t lo = 0x0001000100010001ULL;
+            static constexpr u64_t h = static_cast<u64_t>('\x2d') * 0x101010101010101ULL;
+            const u64_t x = v ^ h;
+            return (((x | lo) - hi) | ((x  | hi) - lo)) & (~x & 0x8080808080808080ULL);
+        };
+
+        inline bool req_header_name(const dhttp::req_t &req_name, const void *buf)
+        {
+            while (true)
+            {
+                const u64_t v = *reinterpret_cast<const u64_t *>(buf + req_name.pos);
+                if (~ascii_letters(v) ^ ascii_hyphen(v))
+                    return 0;
+            }
         }
 
         int extract_fields(dhttp::header_t &input, state_t &state, u64_t lf, u64_t cr, u64_t crlf, u64_t col)
         {
             static const dhttp::simd wsp{'\x20'};
-            const u64_t sp = dhttp::simd::movemask(wsp == state.mv);
+            static const dhttp::simd whtab{'\x9'};
+            const u64_t sp = dhttp::simd::movemask(wsp == state.v | whtab == state.v);
 
             const u64_t valid_sp   = ~static_cast<const u64_t>(state.trailing_sp) & trim(sp);
-            const u64_t valid_char = classify_rfc(state.mv);
+            const u64_t valid_char = classify_rfc(state.v);
 
             if (state.req_line is done)
             {
                 ///////////////////////////////////////////////////
                 ////////// PARSE REQUEST-STATUS LINE //////////////
                 ///////////////////////////////////////////////////
-                if (state.state & dhttp::STATE_TRAILING_CR)
+                u64_t mask  = sp | cr | lf;
+                u64_t umask = mask & blsmask(cr | lf);
+
+                dhttp::req_t(&req)[] = input.request.request_line;
+
+                if (state.trailing_cr is true)
                 {
                     if (lf & 0x01)
                         return -400;
-                    state.req_line = true;
+                    lf ^= 0x01;
+                    state.pos += 1; // lf
                     goto post_req_line;
                 }
 
@@ -112,13 +159,9 @@ namespace dhttp
                 if ((~(valid_char | valid_sp) | lf | (cr & ~0x8000000000000000ULL)) & tzmask(crlf))
                     return -400;
 
-                u64_t mask  = sp | cr | lf;
-                u64_t umask = mask & blsmask(cr | lf);
-
-                dhttp::req_t(&req)[] = input.request.request_line;
                 for (; umask and state.j; state.j--)
                 {
-                    req[state.j].end = state.pos + tzcnt(umask);
+                    req[state.j].pos = state.pos + tzcnt(umask);
                     umask &= umask - 1;
                 }
 
@@ -129,14 +172,14 @@ namespace dhttp
                     state.trailing_sp = sp & 0x8000000000000000ULL;
                     return 0;
                 }
-                mask &= ~umask;
+                mask &= tzmask(crlf);
                 crlf &= mask, lf &= mask, cr &= mask;
+                state.pos = req[state.j + 1].pos + 2; // +2 for cr and lf
 
                 //////////////////////////////////////////////
                 post_req_line:
                 //////////////////////////////////////////////
-                state.pos += req[state.j + 1].end;
-                state.req_line = true;                 // done
+                state.req_line = done;                 // done
                 if (state.j isnot 0 or req_version_tag(req, input.recvb.recvbuf, dhttp::_req_type::index[req_type]) isnot dhttp::http_1)
                     return -400;
             }
@@ -145,7 +188,7 @@ namespace dhttp
             //////////////// PARSE HEADERS ////////////////////
             ///////////////////////////////////////////////////
 
-            if (unlikely(state.state & dhttp::RESUME))
+            if (unlikely(state.resume is true))
             {
                 const u64_t first_lf = lsb(lf);
                 if (not first_lf)
@@ -153,33 +196,31 @@ namespace dhttp
 
                 // TODO: extract field-name, field_value here
 
-                state.state |= dhttp::RESUME;
+                state.resume = false;
                 // unset colon within values; TODO: false colon is between first lf/cr and next lf/cr not just after first
-                col &= ~blsfill(first_lf);
+                col &= ~xlsfill(first_lf);
                 lf  &= ~first_lf;
             }
 
             while (unlikely(col))
             {
-                const u64_t first_lf  = lsb(lf);
                 const u64_t first_col = lsb(col);
-                const u64_t next_lf   = lsb(lf & ~blsfill(first_col)); // next lf after first colon
+                const u64_t eol   = lsb(crlf & xlsfill(first_col)); // next crlf after first colon
 
-                if (first_lf and (first_lf < first_col))
+                if (eol and (eol < first_col))
                     return -400; // missing header name
-                if (not next_lf)
-                {
-                    state.state |= dhttp::RESUME; // no linefeed(lf), all data
-                    break;
-                }
+                if (not eol)
+                    return state.resume = true; // no linefeed(lf), all data
 
-                uint16_t s = tzcnt(first_lf);
-                uint16_t e = tzcnt(next_lf);
+                uint16_t pos_col = tzcnt(first_col);
+                uint16_t pos_eol = tzcnt(eol);
 
-                // TODO: extract field-name, field-value
-
-                col &= ~blsfill(first_lf);
-                lf  &= ~first_lf;
+                /////////////////////////////////////////////
+                ////////// VALIDATE HEADER NAME /////////////
+                req_header_name(input.hf.req_buf[state.j], input.recvb.recvbuf);
+                /////////////////////////////////////////////
+                col &= xlsfill(eol);
+                crlf  &= ~eol;
             }
             return 0;
         }
@@ -195,11 +236,11 @@ namespace dhttp
             for (size_t j = 0; j < n; j += 64)
             {
                 u8_t *b = input.recvb.recvbuf + j;
-                state.mv = b;
+                state.v = b;
 
-                u64_t lf   = dhttp::simd::movemask(state.mv == LF);
-                u64_t cr   = dhttp::simd::movemask(state.mv == CR);
-                u64_t col  = dhttp::simd::movemask(state.mv == CL);
+                u64_t lf   = dhttp::simd::movemask(state.v == LF);
+                u64_t cr   = dhttp::simd::movemask(state.v == CR);
+                u64_t col  = dhttp::simd::movemask(state.v == CL);
                 u64_t crlf = lf & (cr >> 1);
 
                 if (unlikely(extract_fields(input, state, lf, cr, crlf, col) < 0))

@@ -26,7 +26,15 @@
 #    define HAVE__INT128__ 1
 #endif
 
-#define inline __attribute__((always_inline)) inline
+#if defined(__GNUC__) || defined(__clang__)
+#    define inline      __attribute__((always_inline)) inline
+#    define likely(x)   __builtin_expect(!!(x), 1)
+#    define unlikely(x) __builtin_expect(!!(x), 0)
+#else
+#    define inline
+#    define likely(x) (x)
+#    define unlikely(x) (x)
+#endif
 
 #define U32(x)  static_cast<const uint32_t>(x)
 #define U64(x)  static_cast<const uint64_t>(x)
@@ -67,8 +75,8 @@ namespace dhttp
 
     typedef struct
     {
-        uint16_t start;
-        uint16_t end;
+        uint16_t pos;
+        uint16_t len;
     } req_t;
 
     typedef struct
@@ -106,15 +114,13 @@ namespace dhttp
     using state_t = struct
     {
         
-        simd  mv          = 0; // current vector lane
+        simd  v           = 0; // current vector lane
         u16_t pos         = 0; // absolute index of last byte parsed
-        u16_t line_start  = 0; // start index of token
-        u16_t line_end    = 0; // end index of token
         u16_t j           = 3; // request line field count (0, 3)
-        u8_t  state       = 0; // general header state
         bool  parse_uinit = 1; // true if decoding of request/status-line is pending (not started)
         bool  trailing_sp = 0; // carry of trailing sp
         bool  trailing_cr = 0;
+        bool  resume      = 0;
         bool  req_line    = 0;
     };
 
@@ -138,25 +144,6 @@ namespace dhttp
             0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0};
     }
-
-    auto blsr = [&](u64_t x) -> u64_t
-    {
-        return x & (x - 1);
-    };
-    auto tzcnt = [&](u64_t v)
-    {
-        return __builtin_ctzll(v);
-    };
-    auto likely = [&](bool v)
-    {
-        return __builtin_expect(v, 1);
-    };
-    auto unlikely = [&](bool v)
-    {
-        return __builtin_expect(v, 0);
-    };
-    auto blsfill = [&](u64_t x) -> u64_t
-    { return x | (x - 1); };
 
 #if HAVE__AVX2__
 #   define HAVE_SHUFFLE__ 1
@@ -212,9 +199,14 @@ namespace dhttp
         return {_mm_and_si128(u.lo, v.lo), _mm_and_si128(u.hi, v.hi)};
     }
 
-    inline __m256i _mm256_srli_epi32(const __m256i u, const int r)
+    inline __m256i _mm256_or_si256(const __m256i u, const __m256i v)
     {
-        return {_mm_srli_epi16(u.lo, r), _mm_srli_epi16(u.hi, r)}; // TODO
+        return {_mm_or_si128(u.lo, v.lo), _mm_or_si128(u.hi, v.hi)};
+    }
+
+    inline __m256i _mm256_srli_epi8(const __m256i u, const int r)
+    {
+        return {_mm_srli_si128(u.lo, r), _mm_srli_si128(u.hi, r)};
     }
 
     inline bool _mm256_testz_si256(const __m256i u)
@@ -311,7 +303,12 @@ namespace dhttp
         return {u.lo & v.lo, u.hi & v.hi};
     }
 
-    constexpr inline __m256i _mm256_srli_epi32(const __m256i u, const int r)
+    constexpr inline __m256i _mm256_or_si256(const __m256i u, const __m256i v)
+    {
+        return {u.lo | v.lo, u.hi | v.hi};
+    }
+
+    constexpr inline __m256i _mm256_srli_epi8(const __m256i u, const int r)
     {
         return {u.lo >> r, u.hi >> r}; // TODO
     }
@@ -403,7 +400,12 @@ namespace dhttp
         return {u.lo & v.lo, u.vlo & v.vlo, u.hi & v.hi, u.vhi & v.vhi};
     }
 
-    inline __m256i _mm256_srli_epi32(const __m256i u, const int r)
+    inline __m256i _mm256_or_si256(const __m256i u, const __m256i v)
+    {
+        return {u.lo | v.lo, u.vlo | v.vlo, u.hi | v.hi, u.vhi | v.vhi};
+    }
+
+    inline __m256i _mm256_srli_epi8(const __m256i u, const int r)
     {
         return {u.lo >> r, u.vlo >> r, u.hi >> r, u.vhi >> r};
     }
@@ -484,7 +486,7 @@ namespace dhttp
     template <typename base>
     inline simd64<base> operator>(const simd64<base> &u, const simd64<base> &v)
     {
-        return simd(_mm256_cmpgt_epi8(lo, v.lo), _mm256_cmpgt_epi8(hi, v.hi));
+        return {_mm256_cmpgt_epi8(lo, v.lo), _mm256_cmpgt_epi8(hi, v.hi)};
     }
 
     template <typename base>
@@ -508,13 +510,19 @@ namespace dhttp
     template <typename base>
     inline simd64<base> operator&(const simd64<base>& lhs, const simd64<base>& rhs)
     {
-        return simd64<base>{_mm256_and_si256(lhs.lo, rhs.lo), _mm256_and_si256(lhs.hi, rhs.hi)};
+        return {_mm256_and_si256(lhs.lo, rhs.lo), _mm256_and_si256(lhs.hi, rhs.hi)};
+    }
+
+    template <typename base>
+    inline simd64<base> operator|(const simd64<base>& lhs, const simd64<base>& rhs)
+    {
+        return {_mm256_or_si256(lhs.lo, rhs.lo), _mm256_or_si256(lhs.hi, rhs.hi)};
     }
 
     template <typename base>
     inline simd64<base> operator>>(const simd64<base>& lhs, const int& r)
     {
-        return {_mm256_srli_epi32(lhs.lo, r), _mm256_srli_epi32(lhs.hi, r)};
+        return {_mm256_srli_epi8(lhs.lo, r), _mm256_srli_epi8(lhs.hi, r)};
     }
 };
 

@@ -1,0 +1,82 @@
+///////////////////////////////////////////////////////////
+TODO: 15th August
+///////////////////////////////////////////////////////////
+Replace ~blsfill(v) with a better v ^ -v
+j != 0 and (lf, cr or crlf): error
+post_req_line comes before L132
+IMPORTANT!!! the if block that Goto'd must increase state.pos by 1 and jump state.j +=
+last_req_pos at post_req_line
+L132: mask &= tzmask(crlf)
+post_req_line: 
+state.pos += 2 // for cr & lf. To support both lf or crlf flexibly: state.pos = 1 + (cr & lsb(lf) << 1)
+first_col = ....
+
+
+next_crlf = next_crlf | cr // | lf (to support both)
+if (first_col < next_crlf)
+      error; // e
+jj. = position_of_first_col
+kk = position_of_next_crlf
+name_len = jj - (state % 64)
+header.name.start = start.pos
+header.name.len   = jj - (state.pos % 64) // position of first colon - number of bits after the last
+complete 64 bits read
+/////////// VERIFY HEADER NAME //////////////
+//////// VALIDATE AFTER COMPLETE READ
+/////// if (line has a colon):
+//////   Then parse header name and value
+verify_name(start=state.pos, name_len=header.name.len)
+Assume name_len > 8 (most case)
+TEST_FUNC:
+t1 =  a < group < z
+t2 =  A < group < Z
+t3 = (group == ‘-’)
+t3 &= t3 - 1                // remove lsb, if t3 is not zero, that means we
+have more than one ‘-’: error
+return t1 | t2 | t3
+test_err_result = false;
+//////
+n = name_len / 8
+bufp = buf + start
+for (; n && not test_err_result; n–)
+{
+test_err_result =  TEST_FUNC(load_8(bufp))
+bufp += 8
+}
+if (name_len % 8 && not test_err_result)
+{
+group = load_8(bufp)
+k = name_len % 8
+return -(TEST_FUNC(group) & blsmask(8 << k))
+}
+return -test_result
+///////////////// END OF VERIFICATION////////////
+///////////////// VERIFY HEADER VALUE ////////////////////
+valid_char = …..
+Invalid_char = (~valid_char | lf | cr) & blsmask(cr | lf)
+if (invalid_char)
+{
+if (has_obstext(v) && not invalid_char ^ movemask(obstext(v)))
+goto continue
+return -400; // error
+}
+///////////////// TRIMMING OF WHITESPACE /////////////////////////
+Trailing:
+Consume everything in the valid char mask between col and next crlfp
+Leading:
+// IF WE HAVE FAST TZCNT and LZCNT
+start = state.pos % 64 + tzcnt(valid)
+len   = lzcnt(valid & blsmask(pos_next_lf))
+// ELSE
+k = 1 << pos_first_col
+while (not sp & k; i++)
+k <<= 1
+k = 1 << pos_next_crlf
+while (not sp & k; j++)
+k >>= 1
+start = state.pos + i
+state.pos += pos_next_crlf
+end  = state.po- j
+///////////////////
+WE NEED A LEFT OVER COUNTER
+/////////////////
