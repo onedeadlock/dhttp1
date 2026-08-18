@@ -19,12 +19,17 @@
     auto blsr    = [](u64_t x){ return  x & x - 1; };
     auto blsfill = [](u64_t x){ return  x | x - 1; };
     auto xlsfill = [](u64_t x){ return  x ^ -x; }; // ~blsfill
-    auto tzcnt   = [](u64_t v){ return __builtin_ctzll(v); };
+    auto tzcnt = [](u64_t v)
+    { return __builtin_ctzll(v); };
 
+    static constexpr u8_t tchar_map[] = "\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0" ////////////////////////////////////
+                                        "\x0\x80\x0\x80\x80\x80\x80\x0\x0\x0\x80\x80\x80\x80\x80\x0\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x0\x0\x0\x0\x0\x0" ////////////////
+                                        "\x0\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x0\x0\x0" ////////////////
+                                        "\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x0\x80\x0\x80\x0";
 
-    /////////////////////////////////////////////
-    // ASCII LETTERS (C > 64/96 AND C < 91/123) 
-    ////////////////////////////////////////////
+    /////////////////////////////////////////////////////////////
+    // ASCII LETTERS (C > 64/96 AND C < 91/123) FOR C != 1
+    /////////////////////////////////////////////////////////////
     inline u64_t ascii_letters(const u64_t v)
     {
         static constexpr u64_t A = static_cast<u64_t>('\x7f' - '\x40') * 0x101010101010101ULL;
@@ -32,9 +37,9 @@
         return (Z - (v & 0x5f5f5f5f5f5f5f5fULL)) & (A + (v & 0x5f5f5f5f5f5f5f5fULL)) & (~v & 0x8080808080808080ULL); //  'a' & 0xdf -> 'A' and (v & 0xdf) & 0x7f -> v & (0xdf & 0x7f) -> v & 0x5f
     }
 
-    /////////////////////////////////////////////
-    // ASCII NUMBERS (C > 47 AND C < 58) 
-    ////////////////////////////////////////////
+    //////////////////////////////////////////////////////
+    // ASCII NUMBERS (C > 47 AND C < 58) FOR C != 1
+    //////////////////////////////////////////////////////
     inline u64_t ascii_numbers(const u64_t v)
     {
         static constexpr u64_t _0 = static_cast<u64_t>('\x7f' - '\x2f') * 0x101010101010101ULL;
@@ -50,26 +55,9 @@
         return (((v ^ h | lo) - hi) | ((v ^ h | hi) - lo)) & (~(v ^ h) & 0x8080808080808080ULL);
     }
 
-#if defined(INCLUDE_UNDERSCORE)
-    inline u64_t ascii_underscore(const u64_t v)
+    inline u64_t ascii_fast_tchar(const u64_t v)
     {
-        static constexpr u64_t hi = 0x0100010001000100ULL;
-        static constexpr u64_t lo = 0x0001000100010001ULL;
-        static constexpr u64_t h = static_cast<u64_t>('\x5f') * 0x101010101010101ULL;
-        return (((v ^ h | lo) - hi) | ((v ^ h | hi) - lo)) & (~(v ^ h) & 0x8080808080808080ULL);
-    }
-#endif
-
-     inline bool ascii_isalpha_plus(const int v)
-    {
-        // a-zA-z, -, 0-9, _
-        return ((v & 0xdf > 0x40) & (v & 0xdf < 0x5b)) or (v == 0x2d) or (v > 0x2f & v < 0x3a) or IU(v == 0x5f);
-    }
-
-    inline u64_t ascii_batch_isalpha_plus(const u64_t v)
-    {
-        // a-zA-z, -, 0-9, _
-        return ascii_letters(v) | ascii_numbers(v) | ascii_hyphen(v) | IU(ascii_underscore(v));
+        return ascii_letters(v) | ascii_numbers(v) | ascii_hyphen(v); // a-zA-z, -, 0-9
     }
 
     struct _req_type
@@ -145,18 +133,39 @@
             return (req_size(req, i[0]) == req_version_required_size) and req_version_is_http_1(buf + req[i[0]].pos);
         }
 
+        inline u64_t req_valid_tchar(const uint8_t *b)
+        {
+            #ifdef SUPPORT_FULL_TCHAR
+            return tchar_map[b[0]] | tchar_map[b[1]] << 8 | tchar_map[b[2]] << 16 | tchar_map[b[3]] << 24 | tchar_map[b[4]] << 32 | tchar_map[b[5]] << 40 | tchar_map[b[5]] << 48 | tchar_map[b[5]] << 56;
+            #else
+            return 0; 
+            #endif
+        }
+
+        inline bool req_tchar(const void *b, const u64_t mask)
+        {
+            #ifdef OPTIMIZE_FOR_MOST_CASE
+                // Most tokens in header name are a-zA-Z0-9 and -; extra cost of full classification if the first check fails
+                return not (~ascii_fast_tchar(*reinterpret_cast<const u64_t *>(b)) & mask or ~req_valid_tchar(reinterpret_cast<const u8_t *>(b)) & mask);
+            #endif
+            return ~req_valid_tchar(reinterpret_cast<const u8_t *>(b)) & mask;
+        }
+
+        inline bool req_single_tchar(const uint8_t b)
+        {
+            return tchar_map[b];
+        }
 
         inline bool req_header_name(const uint8_t *buf, const uint16_t len)
         {
             bool valid = true;
-            // Only a-zA-Z, -, (and _ but not recommended)
             const u16_t e = len >> 3;
-            for (u16_t j = 0; j < e and valid; j++)
-                valid = not ~ascii_batch_isalpha_plus(*(reinterpret_cast<const u64_t *>(buf) + j));
-            // len < 8
             const u64_t r = len & 7;
+
+            for (u16_t j = 0; j < e and valid; j++)
+                valid = req_tchar(reinterpret_cast<const u64_t *>(buf) + j, 0);
             if (likely(valid and r))
-                return r == 1 ? ascii_isalpha_plus(*buf) : ~ascii_batch_isalpha_plus(*(reinterpret_cast<const u64_t *>(buf) + e)) & ((1U << r) - 1); // only check 'r' bytes
+                return r == 1 ? req_single_tchar(*(buf + e)) : req_tchar(reinterpret_cast<const u64_t *>(buf) + e, (1U << (r << 3)) - 1); // only check 'r' bytes
             return valid;
     }
 
