@@ -4,12 +4,6 @@
 #define isnot !=
 #define inline __attribute__((always_inline)) inline
 
-#ifdef INCLUDE_UNDERSCORE
-#    define IU(x) (x)
-#else
-#    define IU(x) 0
-#endif
-
  namespace dhttp
 {
     bool http_1 = true;
@@ -19,13 +13,15 @@
     auto blsr    = [](u64_t x){ return  x & x - 1; };
     auto blsfill = [](u64_t x){ return  x | x - 1; };
     auto xlsfill = [](u64_t x){ return  x ^ -x; }; // ~blsfill
-    auto tzcnt = [](u64_t v)
-    { return __builtin_ctzll(v); };
+    auto tzcnt   = [](u64_t v){ return __builtin_ctzll(v); };
 
     static constexpr u8_t tchar_map[] = "\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0" ////////////////////////////////////
-                                        "\x0\x80\x0\x80\x80\x80\x80\x0\x0\x0\x80\x80\x80\x80\x80\x0\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x0\x0\x0\x0\x0\x0" ////////////////
+                                        "\x0\x80\x0\x80\x80\x80\x80\x0\x0\x0\x80\x0\x80\x80\x80\x0\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x0\x0\x0\x0\x0\x00" ////////////////
                                         "\x0\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x0\x0\x0" ////////////////
-                                        "\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x0\x80\x0\x80\x0";
+                                        "\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x0\x80\x0\x80\x0"
+                                        "\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x00"
+                                        "\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x00"
+                                        "\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0"; ///////////
 
     /////////////////////////////////////////////////////////////
     // ASCII LETTERS (C > 64/96 AND C < 91/123) FOR C != 1
@@ -84,8 +80,8 @@
     {
     public:
         dhttp::_req_type::type req_type;
-        int version = 9999999;
-        http() : start_index{0}, req_type{dhttp::_req_type::type::request} {}
+        int version;
+        http() : start_index{0}, req_type{dhttp::_req_type::type::request}, version(99) {}
 
     private:
         u16_t start_index; // buffer start index
@@ -98,15 +94,15 @@
             return dhttp::simd::testzero(v & hi);
         }
 
-        inline u64_t classify_rfc(dhttp::simd &v) const
+        inline u64_t valid_tchar(dhttp::simd &v) const
         {
-#if defined(HAVE_SHUFFLE__)
-            static const dhttp::simd lo{dhttp::tables::bitmap_valid_charset};
-            static const dhttp::simd hi{dhttp::tables::bitmap_valid_charset + 64};
-            return dhttp::simd::movemask(dhttp::simd::shufb(lo, v) & dhttp::simd::shufb(hi, v >> 4));
-#else
-            return dhttp::simd::movemask(((dhttp::simd('\xf') & v) > '\x0') & dhttp::simd::cmpglt(v >> 4, '\x1', '\x9'));
-#endif
+            if constexpr (HAVE_SHUFFLE__)
+            {
+                static const dhttp::simd lo{dhttp::tables::token_charset_bitmap};
+                static const dhttp::simd hi{dhttp::tables::token_charset_bitmap + 64};
+                return dhttp::simd::movemask(dhttp::simd::shufb(lo, v) & dhttp::simd::shufb(hi, v >> 4));
+            }
+            return 0;
         }
 
         inline int req_version(const uint8_t i)
@@ -136,7 +132,7 @@
         inline u64_t req_valid_tchar(const uint8_t *b)
         {
             #ifdef SUPPORT_FULL_TCHAR
-            return tchar_map[b[0]] | tchar_map[b[1]] << 8 | tchar_map[b[2]] << 16 | tchar_map[b[3]] << 24 | tchar_map[b[4]] << 32 | tchar_map[b[5]] << 40 | tchar_map[b[5]] << 48 | tchar_map[b[5]] << 56;
+            return tchar_map[b[0]] | tchar_map[b[1]] << 8 | tchar_map[b[2]] << 16 | tchar_map[b[3]] << 24 | tchar_map[b[4]] << 32 | tchar_map[b[5]] << 40 | tchar_map[b[6]] << 48 | tchar_map[b[7]] << 56;
             #else
             return 0; 
             #endif
@@ -144,11 +140,12 @@
 
         inline bool req_tchar(const void *b, const u64_t mask)
         {
-            #ifdef OPTIMIZE_FOR_MOST_CASE
-                // Most tokens in header name are a-zA-Z0-9 and -; extra cost of full classification if the first check fails
-                return not (~ascii_fast_tchar(*reinterpret_cast<const u64_t *>(b)) & mask or ~req_valid_tchar(reinterpret_cast<const u8_t *>(b)) & mask);
-            #endif
-            return ~req_valid_tchar(reinterpret_cast<const u8_t *>(b)) & mask;
+            if constexpr (OPTIMIZE_FOR_MOST_CASE)
+            {
+                // Most tokens are a-zA-Z0-9 and -; extra cost of full classification if the first check fails
+                return not(~ascii_fast_tchar(*reinterpret_cast<const u64_t *>(b)) & mask or ~req_valid_tchar(reinterpret_cast<const u8_t *>(b)) & mask);
+            }
+            return not (~req_valid_tchar(reinterpret_cast<const u8_t *>(b)) & mask);
         }
 
         inline bool req_single_tchar(const uint8_t b)
@@ -171,19 +168,18 @@
 
         int extract_fields(dhttp::header_t &input, state_t &state, u64_t lf, u64_t cr, u64_t crlf, u64_t col)
         {
-            static const dhttp::simd wsp{'\x20'};
-            static const dhttp::simd whtab{'\x9'};
-            const u64_t sp = dhttp::simd::movemask(wsp == state.v | whtab == state.v);
+            static const dhttp::simd vsp{'\x20'};
+            static const dhttp::simd vhtab{'\x9'};
+            const u64_t wsp = simd::movemask(vsp == state.v | vhtab == state.v);
+            const u64_t valid_char = simd::movemask(dhttp::simd::cmpglt(state.v, '\x20', '\x7f'));
+            const u64_t valid_sp   = ~static_cast<const u64_t>(state.trailing_sp) & trim(wsp);
 
-            const u64_t valid_sp   = ~static_cast<const u64_t>(state.trailing_sp) & trim(sp);
-            const u64_t valid_char = classify_rfc(state.v);
-
-            if (state.req_line is done)
+            if (state.req_line isnot done)
             {
                 ///////////////////////////////////////////////////
                 ////////// PARSE REQUEST-STATUS LINE //////////////
                 ///////////////////////////////////////////////////
-                u64_t mask  = sp | cr | lf;
+                u64_t mask  = wsp | cr | lf;
                 u64_t umask = mask & blsmask(cr | lf);
 
                 dhttp::req_t(&req)[] = input.request.request_line;
@@ -221,7 +217,7 @@
                 {
                     state.pos += 64;
                     state.trailing_cr = cr & 0x8000000000000000ULL;
-                    state.trailing_sp = sp & 0x8000000000000000ULL;
+                    state.trailing_sp = wsp & 0x8000000000000000ULL;
                     return 0;
                 }
                 mask &= tzmask(crlf);
@@ -318,4 +314,3 @@
 #undef inline
 #undef is
 #undef isnot
-#undef IU

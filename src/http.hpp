@@ -26,6 +26,17 @@
 #    define HAVE__INT128__ 1
 #endif
 
+#define HAVE_SHUFFLE__ 0 // set if we have ssse3
+
+////////////////////////////////////////////////////////
+///////////////////// PERFORMANCE //////////////////////
+////////////////////////////////////////////////////////
+#ifndef OPTIMIZE_FOR_MOST_CASE
+#    define OPTIMIZE_FOR_MOST_CASE 1
+#endif
+////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////
+
 #if defined(__GNUC__) || defined(__clang__)
 #    define inline      __attribute__((always_inline)) inline
 #    define likely(x)   __builtin_expect(!!(x), 1)
@@ -132,7 +143,7 @@ namespace dhttp
                                           [, ], @, !, $, &, ', (, ), *, +, ,
                                           , ;, =
         */
-        alignas(64) uint8_t bitmap_valid_charset[256]{
+        alignas(64) uint8_t token_charset_bitmap[256]{
             // low 4 bits map of supported ASCII characters
             0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
             0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -435,6 +446,7 @@ namespace dhttp
         simd64(int c):v{c} {}
         simd64(void *p):v{p} {}
         simd64(base::type lo, base::type hi) : lo{lo}, hi{hi} {}
+        simd64(sim464& v) : lo{v.lo}, hi{v.hi} {}
 
         static simd64 &operator()()
         {
