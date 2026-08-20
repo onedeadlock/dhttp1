@@ -173,6 +173,14 @@
         return (req_size(req, i[0]) == req_version_required_size) and req_version_is_http_1(buf + req[i[0]]);
     }
 
+    inline bool req_header_value(const simd &v, u64_t lf, u64_t cr, u64_t sp)
+    {
+        u64_t valid_field = simd::movemask(simd::cmpglt(v, '\x20', '\x7f') | (v & '\x80'));
+        if unlikely (~(valid_field | sp) | lf | cr)
+            return false;
+        return true;
+    }
+
     int http::extract_fields(header_t &input, state_t &state, u64_t lf, u64_t cr, u64_t crlf, u64_t col)
     {
         static const simd vsp{'\x20'};
@@ -203,7 +211,7 @@
                 return -400;
 
             // reject blank line at the start of request/response
-            if unlikely ((crlf & 0x02) && state.parse_uinit)
+            if unlikely ((crlf & 0x02) && state.parse_noinit)
             {
                 if ((crlf & crlf >> 2) & 0x04)
                     return 0; // empty request (TODO: reject any further attempt to parse from the buffer)
@@ -241,59 +249,59 @@
         ///////////////////////////////////////////////////
         //////////////// PARSE HEADERS ////////////////////
         ///////////////////////////////////////////////////
-
-        if (state.resume is true)
+        if (state.pending_value)
         {
-            const u64_t first_lf = lsb(lf);
-            if (not first_lf)
-                return 0; // still data, no line-feed(lf)
+            if (not crlf)
+                return (input.hf.req_buf[0].len += 64, 0);
+            if unlikely (not req_header_value(state.v, lf, cr, wsp))
+            {
+                if (state.trailing_cr = static_cast<bool>(cr & 0x8000000000000000ULL); state.trailing_cr)
+                    return 0;
+                return -400;
+            }
+            input.hf.req_buf[0].len += tzcnt(lsb(crlf));
+            crlf &= crlf - 1;
+        }
 
-            // TODO: extract field-name, field_value here
-
-            state.resume = false;
-            // unset colon within values; TODO: false colon is between first lf/cr and next lf/cr not just after first
-            col &= xlsfill(first_lf);
-            lf &= ~first_lf;
+        if unlikely (state.pending_name)
+        {
+            if unlikely (not col)
+                return (input.hf.req_buf[0].len += 64, 0);
+            if unlikely (req_header_name(reinterpret_cast<const uint8_t *>(input.recvb.recvbuf) + 0, 0))
+                return -400;
+            input.hf.req_buf[0].len += tzcnt(lsb(crlf));
+            col &= col;
         }
 
         while (col)
         {
             const u64_t first_col = lsb(col);
             const u64_t eol = lsb(crlf & xlsfill(first_col)); // next crlf after first colon
+            req_t &header = input.hf.req_buf[state.j];
 
-            if (eol and (eol < first_col))
-                return -400; // missing header name
-
-            /////////////////////////////////////////////
-            /////////////// HEADER VALUE ////////////////
-            u64_t valid_field = simd::movemask(simd::cmpglt(state.v, '\x20', '\x7f') | (state.v & '\x80'));
-            if unlikely ((~valid_field | lf | cr) & -eol)
-            {
+            if unlikely (eol and eol < first_col)
+                return -400;
+            //////////////// HEADER NAME ////////////////
+            header.pos = state.pos;
+            header.len = tzcnt(first_col);
+            if unlikely (not req_header_name(reinterpret_cast<const uint8_t *>(input.recvb.recvbuf) + header.pos, header.len))
+                return -400;
+            //////////////// HEADER VALUE /////////////////
+            header.pos = header.pos + header.len + 1;
+            if not (eol)
+                return (input.hf.req_buf[0].len = 1 + 64 - header.len), (state.pending_name = true);
+            header.len = tzcnt(eol) - header.len;
+            if unlikely (0 and not req_header_value(state.v, lf, cr, wsp))
+             {
                 if (state.trailing_cr = static_cast<bool>(cr & 0x8000000000000000ULL); state.trailing_cr)
                     return 0;
                 return -400;
-            }
-            /////////////////////////////////////////////
-            /////////////////////////////////////////////
-
-            uint16_t pos_col = tzcnt(first_col);
-            uint16_t pos_eol = tzcnt(eol);
-
-            /////////////////////////////////////////////
-            //////////////// HEADER NAME ////////////////
-            req_t &name = input.hf.req_buf[state.j];
-            name.pos = state.pos;
-            name.len = state.j + pos_col;
-            if (not req_header_name(reinterpret_cast<const uint8_t *>(input.recvb.recvbuf) + name.pos, name.len))
-                return -400;
-            /////////////////////////////////////////////
-            /////////////////////////////////////////////
-
-            if not(eol)
-                return state.resume = true; // no linefeed(lf), all data
-            col &= -first_col;
-            crlf &= -eol;
+             }
+        
+            col  &= xlsfill(eol);
+            crlf &= crlf - 1;
         }
+        state.pending_name = crlf and not col;
         return 0;
     }
     
@@ -312,7 +320,7 @@
 
             u64_t lf = simd::movemask(state.v == LF);
             u64_t cr = simd::movemask(state.v == CR);
-            u64_t col = simd::movemask(state.v == CL);
+            u64_t col  = simd::movemask(state.v == CL);
             u64_t crlf = lf & (cr >> 1);
 
             if unlikely (extract_fields(input, state, lf, cr, crlf, col) < 0)

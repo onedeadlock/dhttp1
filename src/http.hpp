@@ -35,27 +35,34 @@
 #    define OPTIMIZE_FOR_MOST_CASE 1
 #endif
 #ifndef SUPPORT_FULL_TCHAR
-#define SUPPORT_FULL_TCHAR 0
+#    define SUPPORT_FULL_TCHAR 0
 #endif
 ////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////
 
 #if defined(__GNUC__) || defined(__clang__)
-#    define inline      [[gnu::always_inline]] inline
 #    define likely(x)   (__builtin_expect(!!(x), 1))
 #    define unlikely(x) (__builtin_expect(!!(x), 0))
 #elif defined(__cplusplus) && __cplusplus >= 202002L
 #define likely(x)   (x) [[likely]]
 #define unlikely(x) (x) [[unlikely]]
 #else
-#    define inline inline
-#    define likely(x) (x)
+#    define likely(x)   (x)
 #    define unlikely(x) (x)
 #endif
 
-#define U32(x)  static_cast<const uint32_t>(x)
-#define U64(x)  static_cast<const uint64_t>(x)
-#define U128(x) static_cast<const __uint128_t>(x)
+#if defined(__GNUC__) || defined(__clang__)
+#    define inline      [[gnu::always_inline]] inline
+#elif defined(MSC_VER)
+#    define inline __forceinline
+#else
+#    define inline inline
+#endif
+
+
+#define U32(x)  static_cast<const u32_t>(x)
+#define U64(x)  static_cast<const u64_t>(x)
+#define U128(x) static_cast<const u128_t>(x)
 
 #define lsb(x)   ((x) & -(x))        // isolate lsb
 #define trim(x)  ((x) & ~((x) << 1)) // set only lsb of every bit run, that is, given 0b100111100001, return 0b100000100001
@@ -65,6 +72,9 @@ namespace dhttp
     template <typename base> struct simd64;
     class http;
 
+    #if HAVE__INT128__
+    using u128_t = __uint128_t;
+    #endif
     using u64_t = uint64_t;
     using u32_t = uint32_t;
     using u16_t = uint16_t;
@@ -83,11 +93,9 @@ namespace dhttp
         EXPECT_DATA       = 2,
         ERROR             = -1,
         MAX_SIZE_EXCEEDED = -2,
-        RESUME            = 0x80,
-        RL_INCOMPLETE     = 0x02,
-        RL_COMPLETE       = 0x01,
-        RL_MALFORMED      = -1,
-        STATE_TRAILING_CR = 1
+        RESUME            = 128,
+        STATE_TRAILING_CR = 1,
+        unfinished_header_name = 0x11
     };
 
     typedef struct
@@ -130,15 +138,17 @@ namespace dhttp
 
     using state_t = struct
     {
-        
-        simd  v           = 0; // current vector lane
-        u16_t pos         = 0; // absolute index of last byte parsed
-        u16_t j           = 3; // request line field count (0, 3)
-        bool  parse_uinit = 1; // true if decoding of request/status-line is pending (not started)
-        bool  trailing_sp = 0; // carry of trailing sp
-        bool  trailing_cr = 0;
-        bool  resume      = 0;
-        bool  req_line    = 0;
+
+        simd  v             = 0; // current vector lane
+        u16_t pos           = 0; // absolute index of last byte parsed
+        u16_t j             = 3; // request line field count (0, 3)
+        bool  parse_noinit  = 1; // true if decoding of request/status-line is pending (not started)
+        bool  trailing_sp   = 0; // carry of trailing sp
+        bool  trailing_cr   = 0;
+        bool  resume        = 0;
+        bool  req_line      = 0; // request line
+        bool  pending_name  = 0;
+        bool  pending_value = 0;
     };
 
 
@@ -250,20 +260,20 @@ namespace dhttp
     ///////////////////////////
     typedef struct alignas(32)
     {
-        __uint128_t lo, hi;
+        u128_t lo, hi;
     } __m256i;
     /////////////////////////
     /////////////////////////
 
     inline __m256i _mm256_loadu_si256(const void *b)
     {
-        const __uint128_t *x = reinterpret_cast<const __uint128_t *>(b);
+        const u128_t *x = reinterpret_cast<const u128_t *>(b);
         return {x[0], x[1]};
     }
 
     constexpr inline __m256i _mm256_set1_epi8(const u8_t v)
     {
-        static constexpr __uint128_t c = U128(0x101010101010101ULL) << 64 | 0x101010101010101ULL;
+        static constexpr u128_t c = U128(0x101010101010101ULL) << 64 | 0x101010101010101ULL;
         return {U128(v) * c, U128(v) * c};
     }
 
@@ -283,9 +293,9 @@ namespace dhttp
 
     inline __m256i _mm256_cmpeq_epi8(const __m256i u, const __m256i v)
     {
-        static constexpr __uint128_t c1 = U128(0x1000100010001000ULL) << 64 | 0x0100010001000100ULL;
-        static constexpr __uint128_t c2 = U128(0x1000100010001000ULL) << 64 | 0x0001000100010001ULL;
-        static constexpr __uint128_t c3 = U128(0x8080808080808080ULL) << 64 | 0x8080808080808080ULL;
+        static constexpr u128_t c1 = U128(0x1000100010001000ULL) << 64 | 0x0100010001000100ULL;
+        static constexpr u128_t c2 = U128(0x1000100010001000ULL) << 64 | 0x0001000100010001ULL;
+        static constexpr u128_t c3 = U128(0x8080808080808080ULL) << 64 | 0x8080808080808080ULL;
 
         return {
             ((((u.lo ^ v.lo) | c2) - c1) | (((u.lo ^ v.lo) | c1) - c2)) & (~(u.lo ^ v.lo) & c3),
@@ -293,21 +303,21 @@ namespace dhttp
         };
     }
 
-    constexpr inline u64_t _mm256_cmpgt1_epi8(const __m256i v, const u8_t a)
+    constexpr inline __m256i _mm256_cmpgt1_epi8(const __m256i v, const u8_t a)
     {
         static constexpr u64_t c = 0x8080808080808080ULL;
         const u64_t x = (0x7f - a) * 0x101010101010101ULL;
 
         return {((v.lo + x) | v.lo) & c, ((v.hi + x) | v.hi) & c};
     }
-    constexpr inline __uint128_t _mm256_cmpglt_epi8(const __m256i v, const u8_t a, const u8_t b)
+    constexpr inline __m256i _mm256_cmpglt_epi8(const __m256i v, const u8_t a, const u8_t b)
     {
-        static constexpr __uint128_t c1 = U128(0x101010101010101ULL) << 64 | 0x101010101010101ULL;
-        static constexpr __uint128_t c2 = c1 * 127;
-        static constexpr __uint128_t c3 = c1 * 128;
+        static constexpr u128_t c1 = U128(0x101010101010101ULL) << 64 | 0x101010101010101ULL;
+        static constexpr u128_t c2 = c1 * 127;
+        static constexpr u128_t c3 = c1 * 128;
 
-        const __uint128_t x = (0x7f - a) * c1;
-        const __uint128_t y = (0x7f + b) * c1;
+        const u128_t x = (0x7f - a) * c1;
+        const u128_t y = (0x7f + b) * c1;
 
         return {
             y - (v.lo & c2) & x + (v.lo & c2) & (~v.lo & c3),
@@ -366,13 +376,13 @@ namespace dhttp
         const u32_t x = _pext_u64(u.lo, c) << 8 | _pext_u64(u.vlo, c);
         const u32_t y = _pext_u64(u.hi, c) << 8 | _pext_u64(u.vhi, c);
 #else
-        const u16_t x = ((((u.lo * mp) >> 48) & 0xff00ULL) | ((u.vlo * mp) >> 56));
+        const u32_t x = ((((u.lo * mp) >> 48) & 0xff00ULL) | ((u.vlo * mp) >> 56));
         const u32_t y = ((((u.hi * mp) >> 48) & 0xff00ULL) | ((u.vhi * mp) >> 56));
 #endif
         return y << 16 | x;
     }
 
-    constexpr inline u64_t _mm256_cmpgt1_epi8(const __m256i v, const u64_t a)
+    constexpr inline __m256i _mm256_cmpgt1_epi8(const __m256i v, const u64_t a)
     {
         static constexpr u64_t c = 0x8080808080808080ULL;
         const u64_t x = (0x7f - a) * 0x101010101010101ULL;
@@ -385,7 +395,7 @@ namespace dhttp
         };
     }
 
-    constexpr inline u64_t _mm256_cmpglt_epi8(const __m256i v, const u64_t a, const u64_t b)
+    constexpr inline __m256i _mm256_cmpglt_epi8(const __m256i v, const u64_t a, const u64_t b)
     {
         const u64_t x = (0x7f - a) * 0x101010101010101ULL;
         const u64_t y = (0x7f + b) * 0x101010101010101ULL;
@@ -477,7 +487,7 @@ namespace dhttp
             hi = _mm256_set1_epi8(stati_cast<u8_t>(v & 0xff));
             return *this;
         }
-        
+
         static bool testzero(const simd64& v) const
         {
             return _mm256_testz_si256(v.lo) or _mm256_testz_si256(v.hi);
@@ -488,7 +498,7 @@ namespace dhttp
             return U64(_mm256_movemask_epi8(v.hi)) << 32 | _mm256_movemask_epi8(v.lo);
         }
 
-        static simd64 cmpglt(const simd64& v, u8_t a, u8_t b) const 
+        static simd64 cmpglt(const simd64& v, u8_t a, u8_t b) const
         {
             return {_mm256_cmpglt_epi8(v.lo, a, b), _mm256_cmpglt_epi8(v.hi, a, b)};
         }
@@ -500,7 +510,7 @@ namespace dhttp
         }
 #endif
     };
-    
+
     template <typename base>
     inline simd64<base> operator>(const simd64<base> &u, const simd64<base> &v)
     {
@@ -532,6 +542,13 @@ namespace dhttp
     }
 
     template <typename base>
+    inline simd64<base> operator&(const simd64<base>& lhs, const u8_t& rhs)
+    {
+        __m256i x = _mm256_set1_epi8(rhs);
+        return {_mm256_and_si256(lhs.lo, x.lo), _mm256_and_si256(lhs.hi, x.hi)};
+    }
+
+    template <typename base>
     inline simd64<base> operator|(const simd64<base>& lhs, const simd64<base>& rhs)
     {
         return {_mm256_or_si256(lhs.lo, rhs.lo), _mm256_or_si256(lhs.hi, rhs.hi)};
@@ -544,5 +561,4 @@ namespace dhttp
     }
 };
 
-#undef inline
 #endif
