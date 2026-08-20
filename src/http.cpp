@@ -3,7 +3,6 @@
 #define is ==
 #define isnot !=
 #define not(x) (!(x))
-#define inline __attribute__((always_inline)) inline
 
  namespace dhttp
 {
