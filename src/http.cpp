@@ -273,7 +273,7 @@
             col &= col;
         }
 
-        while (col)
+        for (col; state.j++)
         {
             const u64_t first_col = lsb(col);
             const u64_t eol = lsb(crlf & xlsfill(first_col)); // next crlf after first colon
