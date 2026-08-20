@@ -66,7 +66,7 @@
     /////////////////////////////////////////////////////////////
     // ASCII LETTERS (C > 64/96 AND C < 91/123) FOR C != 1
     /////////////////////////////////////////////////////////////
-    inline u64_t ascii_letters(const u64_t v)
+    inline u64_t dhttp::ascii_letters(const u64_t v)
     {
         static constexpr u64_t A = static_cast<u64_t>('\x7f' - '\x40') * 0x101010101010101ULL;
         static constexpr u64_t Z = static_cast<u64_t>('\x7f' + '\x5b') * 0x101010101010101ULL;
@@ -76,14 +76,14 @@
     //////////////////////////////////////////////////////
     // ASCII NUMBERS (C > 47 AND C < 58) FOR C != 1
     //////////////////////////////////////////////////////
-    inline u64_t ascii_numbers(const u64_t v)
+    inline u64_t dhttp::ascii_numbers(const u64_t v)
     {
         static constexpr u64_t _0 = static_cast<u64_t>('\x7f' - '\x2f') * 0x101010101010101ULL;
         static constexpr u64_t _9 = static_cast<u64_t>('\x7f' + '\x3a') * 0x101010101010101ULL;
         return (_9 - (v & 0x7f7f7f7f7f7f7f7fULL)) & (_0 + (v & 0x7f7f7f7f7f7f7f7fULL)) & (~v & 0x8080808080808080ULL);
     }
 
-    inline u64_t ascii_hyphen(const u64_t v)
+    inline u64_t dhttp::ascii_hyphen(const u64_t v)
     {
         static constexpr u64_t hi = 0x0100010001000100ULL;
         static constexpr u64_t lo = 0x0001000100010001ULL;
@@ -91,7 +91,7 @@
         return (((v ^ h | lo) - hi) | ((v ^ h | hi) - lo)) & (~(v ^ h) & 0x8080808080808080ULL);
     }
 
-    inline u64_t ascii_fast_tchar(const u64_t v)
+    inline u64_t dhttp::ascii_fast_tchar(const u64_t v)
     {
         return ascii_letters(v) | ascii_numbers(v) | ascii_hyphen(v); // a-zA-z, -, 0-9
     }
@@ -119,9 +119,9 @@
         if constexpr (OPTIMIZE_FOR_MOST_CASE)
         {
             // Most tokens are a-zA-Z0-9 and -; extra cost of full classification if the first check fails
-            return not(~ascii_fast_tchar(*reinterpret_cast<const u64_t *>(b)) & mask or ~req_valid_tchar(reinterpret_cast<const u8_t *>(b)) & mask);
+            return not(~ascii_fast_tchar(*reinterpret_cast<const u64_t *>(b)) & mask and ~req_valid_tchar(reinterpret_cast<const u8_t *>(b)) & mask);
         }
-        return not(~req_valid_tchar(reinterpret_cast<const u8_t *>(b)) & mask);
+        return not (~req_valid_tchar(reinterpret_cast<const u8_t *>(b)) & mask);
     }
 
     inline bool dhttp::req_single_tchar(const uint8_t b)
