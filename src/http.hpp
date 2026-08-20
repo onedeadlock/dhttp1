@@ -34,13 +34,19 @@
 #ifndef OPTIMIZE_FOR_MOST_CASE
 #    define OPTIMIZE_FOR_MOST_CASE 1
 #endif
+#ifndef SUPPORT_FULL_TCHAR
+#define SUPPORT_FULL_TCHAR 0
+#endif
 ////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////
 
 #if defined(__GNUC__) || defined(__clang__)
-#    define inline      __attribute__((always_inline)) inline
+#    define inline      [[gnu::always_inline]] inline
 #    define likely(x)   (__builtin_expect(!!(x), 1))
 #    define unlikely(x) (__builtin_expect(!!(x), 0))
+#elif defined(__cplusplus) && __cplusplus >= 202002L
+#define likely(x)   (x) [[likely]]
+#define unlikely(x) (x) [[unlikely]]
 #else
 #    define inline inline
 #    define likely(x) (x)
@@ -103,7 +109,7 @@ namespace dhttp
         // [2] = uri/status
         // [1] = version/msg
         // [0] = start index
-        req_t request_line[4];
+        u16_t request_line[4];
     } request_line_t;
 
     typedef struct
