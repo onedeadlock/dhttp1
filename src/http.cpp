@@ -3,6 +3,8 @@
 #define is ==
 #define isnot !=
 #define inline __attribute__((always_inline)) inline
+#define if_unlikely(x)
+#define if_likely(x)
 
  namespace dhttp
 {
@@ -165,13 +167,13 @@
                 return r == 1 ? req_single_tchar(*(buf + e)) : req_tchar(reinterpret_cast<const u64_t *>(buf) + e, (1U << (r << 3)) - 1); // only check 'r' bytes
             return valid;
     }
-
-        int extract_fields(dhttp::header_t &input, state_t &state, u64_t lf, u64_t cr, u64_t crlf, u64_t col)
+        [[using dhttp: simd, req_t, header_t]]
+        int extract_fields(header_t &input, state_t &state, u64_t lf, u64_t cr, u64_t crlf, u64_t col)
         {
-            static const dhttp::simd vsp{'\x20'};
-            static const dhttp::simd vhtab{'\x9'};
+            static const simd vsp{'\x20'};
+            static const simd vhtab{'\x9'};
             const u64_t wsp = simd::movemask(vsp == state.v | vhtab == state.v);
-            const u64_t valid_char = simd::movemask(dhttp::simd::cmpglt(state.v, '\x20', '\x7f'));
+            const u64_t valid_char = simd::movemask(simd::cmpglt(state.v, '\x20', '\x7f'));
             const u64_t valid_sp   = ~static_cast<const u64_t>(state.trailing_sp) & trim(wsp);
 
             if (state.req_line isnot done)
@@ -182,7 +184,7 @@
                 u64_t mask  = wsp | cr | lf;
                 u64_t umask = mask & blsmask(cr | lf);
 
-                dhttp::req_t(&req)[] = input.request.request_line;
+                req_t(&req)[] = input.request.request_line;
 
                 if (state.trailing_cr is true)
                 {
@@ -259,7 +261,12 @@
                     return -400; // missing header name
                 if (not eol)
                     return state.resume = true; // no linefeed(lf), all data
-
+                
+                u64_t valid_field = simd::movemask(simd::cmpglt(state.v, '\x20', '\x7f') | (state.v & '0x80'));
+                if unlikely ((~valid_field | lf | cr) & -eol)
+                {
+                    if (cr & 0x80)
+                }
                 uint16_t pos_col = tzcnt(first_col);
                 uint16_t pos_eol = tzcnt(eol);
 
@@ -277,12 +284,12 @@
             }
             return 0;
         }
-
-        int parse_header(dhttp::header_t &input, state_t &state)
+        [[using dhttp: simd, req_t, header_t]]
+        int parse_header(header_t &input, state_t &state)
         {
-            static const dhttp::simd LF{'\xa'};
-            static const dhttp::simd CR{'\xd'};
-            static const dhttp::simd CL{'\x3a'};
+            static const simd LF{'\xa'};
+            static const simd CR{'\xd'};
+            static const simd CL{'\x3a'};
 
             const size_t n = (input.size + 63) & ~(size_t)63; // align read/load size to 64
 
@@ -291,9 +298,9 @@
                 u8_t *b = input.recvb.recvbuf + j;
                 state.v = b;
 
-                u64_t lf   = dhttp::simd::movemask(state.v == LF);
-                u64_t cr   = dhttp::simd::movemask(state.v == CR);
-                u64_t col  = dhttp::simd::movemask(state.v == CL);
+                u64_t lf   = simd::movemask(state.v == LF);
+                u64_t cr   = simd::movemask(state.v == CR);
+                u64_t col  = simd::movemask(state.v == CL);
                 u64_t crlf = lf & (cr >> 1);
 
                 if (unlikely(extract_fields(input, state, lf, cr, crlf, col) < 0))
