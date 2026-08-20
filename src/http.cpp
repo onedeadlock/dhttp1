@@ -133,11 +133,10 @@
 
         inline u64_t req_valid_tchar(const uint8_t *b)
         {
-            #ifdef SUPPORT_FULL_TCHAR
-            return tchar_map[b[0]] | tchar_map[b[1]] << 8 | tchar_map[b[2]] << 16 | tchar_map[b[3]] << 24 | tchar_map[b[4]] << 32 | tchar_map[b[5]] << 40 | tchar_map[b[6]] << 48 | tchar_map[b[7]] << 56;
-            #else
-            return 0; 
-            #endif
+            if constexpr (SUPPORT_FULL_TCHAR)
+                return tchar_map[b[0]] | tchar_map[b[1]] << 8 | tchar_map[b[2]] << 16 | tchar_map[b[3]] << 24 | tchar_map[b[4]] << 32 | tchar_map[b[5]] << 40 | tchar_map[b[6]] << 48 | tchar_map[b[7]] << 56;
+            }
+            return 0;
         }
 
         inline bool req_tchar(const void *b, const u64_t mask)
@@ -163,7 +162,7 @@
 
             for (u16_t j = 0; j < e and valid; j++)
                 valid = req_tchar(reinterpret_cast<const u64_t *>(buf) + j, 0);
-            if (likely(valid and r))
+            if likely (valid and r)
                 return r == 1 ? req_single_tchar(*(buf + e)) : req_tchar(reinterpret_cast<const u64_t *>(buf) + e, (1U << (r << 3)) - 1); // only check 'r' bytes
             return valid;
     }
@@ -186,7 +185,7 @@
 
                 req_t(&req)[] = input.request.request_line;
 
-                if (state.trailing_cr is true)
+                if unlikely (state.trailing_cr is true)
                 {
                     if (lf & 0x01)
                         return -400;
@@ -195,11 +194,11 @@
                     goto post_req_line;
                 }
 
-                if (unlikely(state.pos < dhttp::REQUEST_LINE_MAX_SIZE))
+                if unlikely (state.pos < dhttp::REQUEST_LINE_MAX_SIZE)
                     return -400;
 
                 // reject blank line at the start of request/response
-                if (unlikely((crlf & 0x02) && state.parse_uinit))
+                if unlikely ((crlf & 0x02) && state.parse_uinit)
                 {
                     if ((crlf & crlf >> 2) & 0x04)
                         return 0; // empty request (TODO: reject any further attempt to parse from the buffer)
@@ -238,7 +237,7 @@
             //////////////// PARSE HEADERS ////////////////////
             ///////////////////////////////////////////////////
 
-            if (unlikely(state.resume is true))
+            if (state.resume is true)
             {
                 const u64_t first_lf = lsb(lf);
                 if (not first_lf)
@@ -252,7 +251,7 @@
                 lf  &= ~first_lf;
             }
 
-            while (unlikely(col))
+            while unlikely (col)
             {
                 const u64_t first_col = lsb(col);
                 const u64_t eol   = lsb(crlf & xlsfill(first_col)); // next crlf after first colon
@@ -303,13 +302,13 @@
                 u64_t col  = simd::movemask(state.v == CL);
                 u64_t crlf = lf & (cr >> 1);
 
-                if (unlikely(extract_fields(input, state, lf, cr, crlf, col) < 0))
+                if unlikely (extract_fields(input, state, lf, cr, crlf, col) < 0)
                     return -400;
                 // stop, if \r\n\r\n is found
-                if (unlikely(crlf & crlf >> 2))
+                if unlikely (crlf & crlf >> 2)
                     return j + tzcnt(crlf & crlf >> 2);
                 // handle any crlf carry
-                if (unlikely((lf | cr) & 0xe000000000000000ull))
+                if unlikely ((lf | cr) & 0xe000000000000000ull)
                     if (('\xd' is b[-3]) && ('\xa' is b[-2]) && ('\xd' is b[-1]) && ('\xa' is b[0]))
                         return j + 4;
             }
