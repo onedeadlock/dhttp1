@@ -173,11 +173,22 @@
         return (req_size(req, i[0]) == req_version_required_size) and req_version_is_http_1(buf + req[i[0]]);
     }
 
-    inline bool req_header_value(const simd &v, u64_t lf, u64_t cr, u64_t sp)
+    inline bool req_single_header_value(simd &v, req_t &header, const uint8_t *, u64_t lf, u64_t cr, u64_t crlf)
     {
+        // TODO: sp
+        u64_t valid_field = simd::movemask(simd::cmpglt(v, '\x20', '\x7f') | (v & '\x80'));
+        if unlikely (~(valid_field) | lf | cr)
+            return false;
+        return true;
+    }
+
+    inline bool req_header_value(req_t &header, const uint8_t *, u64_t lf, u64_t cr, u64_t crlf)
+    {
+        #if 0
         u64_t valid_field = simd::movemask(simd::cmpglt(v, '\x20', '\x7f') | (v & '\x80'));
         if unlikely (~(valid_field | sp) | lf | cr)
             return false;
+        #endif
         return true;
     }
 
@@ -249,31 +260,31 @@
         ///////////////////////////////////////////////////
         //////////////// PARSE HEADERS ////////////////////
         ///////////////////////////////////////////////////
+        req_t &header = input.hf.req_buf[state.j];
+
         if (state.pending_value)
         {
             if (not crlf)
-                return (input.hf.req_buf[0].len += 64, 0);
-            if unlikely (not req_header_value(state.v, lf, cr, wsp))
+                return (header.value.len += 64, 0);
+            if unlikely (not req_header_value(header, input.recvb.recvbuf, lf, cr, crlf))
             {
                 if (state.trailing_cr = static_cast<bool>(cr & 0x8000000000000000ULL); state.trailing_cr)
                     return 0;
                 return -400;
             }
-            input.hf.req_buf[0].len += tzcnt(lsb(crlf));
             crlf &= crlf - 1;
+            state.j += 1;
         }
 
-        if unlikely (state.pending_name)
+        if (state.pending_name)
         {
-            if unlikely (not col)
-                return (input.hf.req_buf[0].len += 64, 0);
-            if unlikely (req_header_name(reinterpret_cast<const uint8_t *>(input.recvb.recvbuf) + 0, 0))
+            if unlikely(crlf)
                 return -400;
-            input.hf.req_buf[0].len += tzcnt(lsb(crlf));
-            col &= col;
+            if unlikely (not col)
+                return (header.name.len += 64, 0);
         }
 
-        for (col; state.j++)
+        for (; col; state.j++)
         {
             const u64_t first_col = lsb(col);
             const u64_t eol = lsb(crlf & xlsfill(first_col)); // next crlf after first colon
@@ -282,16 +293,17 @@
             if unlikely (eol and eol < first_col)
                 return -400;
             //////////////// HEADER NAME ////////////////
-            header.pos = state.pos;
-            header.len = tzcnt(first_col);
-            if unlikely (not req_header_name(reinterpret_cast<const uint8_t *>(input.recvb.recvbuf) + header.pos, header.len))
+            if likely (not state.pending_name)
+                header.name.pos = state.pos;
+            header.name.len += tzcnt(first_col);
+            if unlikely (not req_header_name(input.recvb.recvbuf + header.name.pos, header.name.len))
                 return -400;
             //////////////// HEADER VALUE /////////////////
-            header.pos = header.pos + header.len + 1;
+            header.value.pos = header.value.pos + header.value.len + 1;
             if not (eol)
-                return (input.hf.req_buf[0].len = 1 + 64 - header.len), (state.pending_name = true);
-            header.len = tzcnt(eol) - header.len;
-            if unlikely (0 and not req_header_value(state.v, lf, cr, wsp))
+                return (input.hf.req_buf[0].value.len = 1 + 64 - header.value.len), (state.pending_name = true);
+            header.value.len = tzcnt(eol) - header.value.len;
+            if unlikely (0 and not req_single_header_value(state.v, header, input.recvb.recvbuf, lf, cr, crlf))
              {
                 if (state.trailing_cr = static_cast<bool>(cr & 0x8000000000000000ULL); state.trailing_cr)
                     return 0;

@@ -102,7 +102,14 @@ namespace dhttp
     {
         uint16_t pos;
         uint16_t len;
+    } pos_len_t;
+
+    typedef struct
+    {
+        pos_len_t name;
+        pos_len_t value;
     } req_t;
+
 
     typedef struct
     {
