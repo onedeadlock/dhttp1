@@ -301,7 +301,7 @@
                 state.pending_name = true;
                 return 0;
             }
-            header.value.len = tzcnt(eol) - header.value.len;
+            header.value.len = tzcnt(eol) - header.name.len;
             if unlikely (0 and not req_single_header_value(state.v, header, in, lf, cr, crlf))
              {
                 if (state.trailing_cr = static_cast<bool>(cr & 0x8000000000000000ULL); state.trailing_cr)
