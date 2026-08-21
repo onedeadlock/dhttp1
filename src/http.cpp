@@ -23,6 +23,16 @@
                                         "\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x00"
                                         "\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x00"
                                         "\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0"; ///////////
+    
+    template <typename T>
+    struct req
+    {
+        static_assert(std::is_integral_v<T>);
+        struct
+        {
+            T len, pos;
+        } name, value;
+    };
 
     struct _req_type
     {
@@ -47,25 +57,29 @@
     class dhttp::http
     {
     public:
-        http() : start_index{0}, req_type{_req_type::type::request}, version(99) {}
+        http() : req_type{_req_type::type::request}, version(99) {}
 
     private:
         _req_type::type req_type;
+        req_state state;
+        req_line reqline;
         int version;
-        u16_t start_index; // buffer start index
+        // methods
         int   req_version(const uint8_t i);
         u16_t req_size(const u16_t (&req)[], const int i) const;
         bool  req_version_is_http_1(const void *ver_string);
         bool  req_version_tag(const u16_t (&req)[], const void *buf, const _req_type::req_index& i);
-        int   extract_fields(header_t &input, state_t &state, u64_t lf, u64_t cr, u64_t crlf, u64_t col);
-        int   parse(header_t &input, state_t &state);
-        
+        template <typename T = u16_t, std::size_t out_size> int parse(void *in, size_t in_size, std::array<req<T>, out_size> &out);
+        int parse_request_line(const void *in, const std::size_t size, const simd &v, u64_t &lf, u64_t &cr, u64_t &crlf);
+        template <typename T = u16_t, std::size_t out_size>
+        int parse_header(void *in, size_t in_size, std::array<req<T>, out_size> &out, const simd &v, u64_t &lf, u64_t &cr, u64_t &crlf);
+   
     };
 
     /////////////////////////////////////////////////////////////
     // ASCII LETTERS (C > 64/96 AND C < 91/123) FOR C != 1
     /////////////////////////////////////////////////////////////
-    inline u64_t dhttp::ascii_letters(const u64_t v)
+    inline u64_t ascii_letters(const u64_t v)
     {
         static constexpr u64_t A = static_cast<u64_t>('\x7f' - '\x40') * 0x101010101010101ULL;
         static constexpr u64_t Z = static_cast<u64_t>('\x7f' + '\x5b') * 0x101010101010101ULL;
@@ -75,14 +89,14 @@
     //////////////////////////////////////////////////////
     // ASCII NUMBERS (C > 47 AND C < 58) FOR C != 1
     //////////////////////////////////////////////////////
-    inline u64_t dhttp::ascii_numbers(const u64_t v)
+    inline u64_t ascii_numbers(const u64_t v)
     {
         static constexpr u64_t _0 = static_cast<u64_t>('\x7f' - '\x2f') * 0x101010101010101ULL;
         static constexpr u64_t _9 = static_cast<u64_t>('\x7f' + '\x3a') * 0x101010101010101ULL;
         return (_9 - (v & 0x7f7f7f7f7f7f7f7fULL)) & (_0 + (v & 0x7f7f7f7f7f7f7f7fULL)) & (~v & 0x8080808080808080ULL);
     }
 
-    inline u64_t dhttp::ascii_hyphen(const u64_t v)
+    inline u64_t ascii_hyphen(const u64_t v)
     {
         static constexpr u64_t hi = 0x0100010001000100ULL;
         static constexpr u64_t lo = 0x0001000100010001ULL;
@@ -90,12 +104,12 @@
         return (((v ^ h | lo) - hi) | ((v ^ h | hi) - lo)) & (~(v ^ h) & 0x8080808080808080ULL);
     }
 
-    inline u64_t dhttp::ascii_fast_tchar(const u64_t v)
+    inline u64_t ascii_fast_tchar(const u64_t v)
     {
         return ascii_letters(v) | ascii_numbers(v) | ascii_hyphen(v); // a-zA-z, -, 0-9
     }
 
-    inline u64_t dhttp::valid_tchar(dhttp::simd &v)
+    inline u64_t valid_tchar(dhttp::simd &v)
     {
         if constexpr (HAVE_SHUFFLE__)
         {
@@ -106,14 +120,14 @@
         return 0;
     }
 
-    inline u64_t dhttp::req_valid_tchar(const uint8_t *b)
+    inline u64_t req_valid_tchar(const uint8_t *b)
     {
         if constexpr (SUPPORT_FULL_TCHAR)
             return U64(tchar_map[b[0]]) | U64(tchar_map[b[1]]) << 8 | U64(tchar_map[b[2]]) << 16 | U64(tchar_map[b[3]]) << 24 | U64(tchar_map[b[4]]) << 32 | U64(tchar_map[b[5]]) << 40 | U64(tchar_map[b[6]]) << 48 | U64(tchar_map[b[7]]) << 56;
         return 0;
     }
 
-    inline bool dhttp::req_tchar(const void *b, const u64_t mask)
+    inline bool req_tchar(const void *b, const u64_t mask)
     {
         if constexpr (OPTIMIZE_FOR_MOST_CASE)
         {
@@ -123,12 +137,12 @@
         return not (~req_valid_tchar(reinterpret_cast<const u8_t *>(b)) & mask);
     }
 
-    inline bool dhttp::req_single_tchar(const uint8_t b)
+    inline bool req_single_tchar(const uint8_t b)
     {
         return tchar_map[b];
     }
 
-    inline bool dhttp::req_header_name(const uint8_t *buf, const uint16_t len)
+    inline bool req_header_name(const uint8_t *buf, const uint16_t len)
     {
         bool valid = true;
         const u16_t e = len >> 3;
@@ -151,7 +165,7 @@
 
     inline int http::req_version(const uint8_t i)
     {
-        return (this->version = i ^ '\x30') < 10;
+        return (version = i ^ '\x30') < 10;
     }
 
     inline bool http::req_version_is_http_1(const void *ver_string)
@@ -167,12 +181,13 @@
                                                                  : (req[i - 1] - req[i - 0]) - 1; // -1 for the sp seperator
     }
 
-    inline bool http::req_version_tag(const u16_t (&req)[], const void *buf, const _req_type::req_index &i)
+    inline bool http::req_version_tag(const u16_t (&req)[], const void *in, const _req_type::req_index &i)
     {
         static constexpr u16_t req_version_required_size = 8; // strlen(HTTP/1.x)
-        return (req_size(req, i[0]) == req_version_required_size) and req_version_is_http_1(buf + req[i[0]]);
+        return (req_size(req, i[0]) == req_version_required_size) and req_version_is_http_1(in + req[i[0]]);
     }
 
+    #if 0
     inline bool req_single_header_value(simd &v, req_t &header, const uint8_t *, u64_t lf, u64_t cr, u64_t crlf)
     {
         // TODO: sp
@@ -191,82 +206,59 @@
         #endif
         return true;
     }
+    #endif
 
-    int http::extract_fields(header_t &input, state_t &state, u64_t lf, u64_t cr, u64_t crlf, u64_t col)
+    int http::parse_request_line(const void *in, const std::size_t size, const simd &v, u64_t &lf, u64_t &cr, u64_t &crlf)
     {
-        static const simd vsp{'\x20'};
-        static const simd vhtab{'\x9'};
-        const u64_t wsp = simd::movemask(vsp == state.v | vhtab == state.v);
-        const u64_t valid_char = simd::movemask(simd::cmpglt(state.v, '\x20', '\x7f'));
-        const u64_t valid_sp = ~static_cast<const u64_t>(state.trailing_sp) & trim(wsp);
+        static const simd vsp  {'\x20'};
+        static const simd vhtab{'\x9' };
 
-        if (state.req_line isnot done)
+        const u64_t sp        = simd::movemask(simd::cmpgeq(v, vsp) | simd::cmpgeq(v, vhtab));
+        const u64_t valid_sp  = ~static_cast<const u64_t>(state.trailing_sp) & trim(sp);
+        const u64_t tchar     = simd::movemask(simd::cmpglt(v, '\x20', '\x7f')) | valid_sp;
+
+        auto has_any_rejected_token = [&](void)
+        { return (~tchar | lf | (cr & ~0x8000000000000000ULL)) & tzmask(crlf); };
+
+        if unlikely ((crlf & 0x02) and state.no_init)
+            return  ((crlf & crlf >> 2) & 0x04) ? -400 /* empty request */ : -400 /* blank line */;
+        if unlikely (state.pos > size or has_any_rejected_token())
+            return -400;
+        if unlikely (state.trailing_cr is true)
         {
-            ///////////////////////////////////////////////////
-            ////////// PARSE REQUEST-STATUS LINE //////////////
-            ///////////////////////////////////////////////////
-            u64_t mask = wsp | cr | lf;
-
-            u16_t(&req)[] = input.request.request_line;
-
-            if unlikely (state.trailing_cr is true)
-            {
-                if (lf & 0x01)
-                    return -400;
-                lf ^= 0x01;
-                state.pos += 1; // lf
-                goto post_req_line;
-            }
-
-            if unlikely (state.pos < dhttp::REQUEST_LINE_MAX_SIZE)
+            if not (lf & 0x01)
                 return -400;
-
-            // reject blank line at the start of request/response
-            if unlikely ((crlf & 0x02) && state.parse_noinit)
-            {
-                if ((crlf & crlf >> 2) & 0x04)
-                    return 0; // empty request (TODO: reject any further attempt to parse from the buffer)
-                return -400;
-            }
-
-            if ((~(valid_char | valid_sp) | lf | (cr & ~0x8000000000000000ULL)) & tzmask(crlf))
-                return -400;
-
-            for (u64_t umask = mask & blsmask(cr | lf); umask and state.j; state.j--)
-            {
-                req[state.j] = state.pos + tzcnt(umask);
-                umask &= umask - 1;
-            }
-
-            state.trailing_cr = static_cast<bool>(cr & 0x8000000000000000ULL);
-            state.trailing_sp = static_cast<bool>(wsp & 0x8000000000000000ULL);
-            if not(crlf)
-            {
-                state.pos += 64;
-                return 0;
-            }
-            mask &= tzmask(crlf);
-            crlf &= mask, lf &= mask, cr &= mask;
-            state.pos = req[state.j + 1] + 2; // +2 for cr and lf
-
-            //////////////////////////////////////////////
-            post_req_line:
-            //////////////////////////////////////////////
-            state.req_line = done; // done
-            if (state.j isnot 0 or req_version_tag(req, input.recvb.recvbuf, _req_type::index[req_type]) isnot dhttp::http_1)
-                return -400;
+            lf &= ~0x1ULL;
+            reqline.req_line[state.j] -= 1; // -cr
+            state.pos += 1;                 // +lf
+            return 0;
         }
 
-        ///////////////////////////////////////////////////
-        //////////////// PARSE HEADERS ////////////////////
-        ///////////////////////////////////////////////////
-        req_t &header = input.hf.req_buf[state.j];
+        u64_t mask = sp | cr | lf;
+        for (u64_t umask = mask & blsmask(cr | lf); umask and state.j; umask &= umask - 1)
+            reqline.req_line[state.j--] = state.pos + tzcnt(umask);
 
+        if not (not crlf)
+        {
+            state.trailing_cr = static_cast<bool>(cr & 0x8000000000000000ULL);
+            state.trailing_sp = static_cast<bool>(sp & 0x8000000000000000ULL);
+            return 0;
+        }
+        mask &= tzmask(crlf), crlf &= mask, lf &= mask, cr &= mask;
+        state.pos = reqline.req_line[state.j + 1] + 2; // +2 for cr and lf
+        state.req_line = done;
+        return -((state.j isnot 0) or (req_version_tag(reqline.req_line, in, _req_type::index[req_type]) isnot dhttp::http_1));
+    }
+
+    template <typename T = u16_t, std::size_t out_size>
+    int http::parse_header(void *in, size_t in_size, std::array<req<T>, out_size> &out, const simd &v, u64_t &lf, u64_t &cr, u64_t &crlf)
+    {
+        auto &header = out[state.j];
         if (state.pending_value)
         {
             if (not crlf)
                 return (header.value.len += 64, 0);
-            if unlikely (not req_header_value(header, input.recvb.recvbuf, lf, cr, crlf))
+            if unlikely (not req_header_value(header, in, lf, cr, crlf))
             {
                 if (state.trailing_cr = static_cast<bool>(cr & 0x8000000000000000ULL); state.trailing_cr)
                     return 0;
@@ -276,34 +268,41 @@
             state.j += 1;
         }
 
-        if (state.pending_name)
+        if unlikely (state.pending_name)
         {
+            // names are mostly short
             if unlikely(crlf)
                 return -400;
             if unlikely (not col)
                 return (header.name.len += 64, 0);
         }
 
-        for (; col; state.j++)
+        while (col)
         {
             const u64_t first_col = lsb(col);
             const u64_t eol = lsb(crlf & xlsfill(first_col)); // next crlf after first colon
-            req_t &header = input.hf.req_buf[state.j];
+            auto &header = out[state.j];
 
             if unlikely (eol and eol < first_col)
                 return -400;
+
             //////////////// HEADER NAME ////////////////
             if likely (not state.pending_name)
                 header.name.pos = state.pos;
             header.name.len += tzcnt(first_col);
-            if unlikely (not req_header_name(input.recvb.recvbuf + header.name.pos, header.name.len))
+            if unlikely (not req_header_name(static_cast<const u8_t *>(in) + header.name.pos, header.name.len))
                 return -400;
+
             //////////////// HEADER VALUE /////////////////
             header.value.pos = header.value.pos + header.value.len + 1;
             if not (eol)
-                return (input.hf.req_buf[0].value.len = 1 + 64 - header.value.len), (state.pending_name = true);
+            {
+                header.value.len = 1 + 64 - header.value.len;
+                state.pending_name = true;
+                return 0;
+            }
             header.value.len = tzcnt(eol) - header.value.len;
-            if unlikely (0 and not req_single_header_value(state.v, header, input.recvb.recvbuf, lf, cr, crlf))
+            if unlikely (0 and not req_single_header_value(state.v, header, in, lf, cr, crlf))
              {
                 if (state.trailing_cr = static_cast<bool>(cr & 0x8000000000000000ULL); state.trailing_cr)
                     return 0;
@@ -312,43 +311,49 @@
         
             col  &= xlsfill(eol);
             crlf &= crlf - 1;
+            state.j += 1;
         }
         state.pending_name = crlf and not col;
         return 0;
     }
-    
-    int http::parse(header_t &input, state_t &state)
+
+    template <typename T = u16_t, std::size_t out_size>
+    int http::parse(void *in, size_t in_size, std::array<req<T>, out_size> &out)
     {
-        static const simd LF{'\xa'};
-        static const simd CR{'\xd'};
-        static const simd CL{'\x3a'};
+        static_assert(out_size != 0);
 
-        const size_t n = (input.size + 63) & ~(size_t)63; // align read/load size to 64
+        static const simd vlf {'\xa'};
+        static const simd vcr {'\xd'};
+        static const simd vcol{'\x3a'};
 
-        for (size_t j = 0; j < n; j += 64)
+        const std::size_t n = (in_size + 63) & ~(std::size_t)63; // align read/load size to 64
+
+        for (std::size_t j = 0; j < n; j += 64)
         {
-            u8_t *b = input.recvb.recvbuf + j;
-            state.v = b;
+            u8_t *b = static_cast<u8_t *>(in) + j;
+            simd::v = b;
 
-            u64_t lf = simd::movemask(state.v == LF);
-            u64_t cr = simd::movemask(state.v == CR);
-            u64_t col  = simd::movemask(state.v == CL);
-            u64_t crlf = lf & (cr >> 1);
+            u64_t lf   = simd::movemask(simd::cmpeq(v, vlf ));
+            u64_t cr   = simd::movemask(simd::cmpeq(v, vcr ));
+            u64_t col  = simd::movemask(simd::cmpeq(v, vcol));
+            u64_t crlf = cr & (lf << 1);
 
-            if unlikely (extract_fields(input, state, lf, cr, crlf, col) < 0)
+            if (state.req_line isnot done and parse_request_line(in, size, v, lf, cr, crlf) < 0)
+               return -400;
+            if (state.req_line is done and parse_header<T, out_size>(in, in_size, out, v, lf, cr, crlf) < 0)
                 return -400;
-            // stop, if \r\n\r\n is found
+            
             if unlikely (crlf & crlf >> 2)
                 return j + tzcnt(crlf & crlf >> 2);
+            
             // handle any crlf carry
             if unlikely ((lf | cr) & 0xe000000000000000ull)
                 if (('\xd' is b[-3]) && ('\xa' is b[-2]) && ('\xd' is b[-1]) && ('\xa' is b[0]))
                     return j + 4;
+            
+            // increment cursor
+            state.pos += 64;
         }
         return dhttp::EXPECT_DATA;
     }
 }
-
-#undef inline
-#undef is
-#undef isnot

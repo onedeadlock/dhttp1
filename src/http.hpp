@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <cstring>
 #include <cstddef>
+#include <array>
+#include <type_traits>
 
 #if defined(__AVX2__) || defined(__SSSE3__) || defined(__SSE4_2__) || defined(__SSE2__)
 #    if defined(__AVX2__)
@@ -73,12 +75,12 @@ namespace dhttp
     class http;
 
     #if HAVE__INT128__
-    using u128_t = __uint128_t;
+    using u128_t = std::uint128_t;
     #endif
-    using u64_t = uint64_t;
-    using u32_t = uint32_t;
-    using u16_t = uint16_t;
-    using u8_t  = uint8_t;
+    using u64_t = std::uint64_t;
+    using u32_t = std::uint32_t;
+    using u16_t = std::uint16_t;
+    using u8_t  = std::uint8_t;
 
     constexpr size_t HEADER_BUF_SIZE_MAX   = 16284;
     constexpr size_t HEADER_BUF_SIZE       = 8192;
@@ -117,15 +119,15 @@ namespace dhttp
         size_t n;
     } reqbuf_t;
 
-    typedef struct
+    struct req_line
     {
         /// N     req     res
         // [3] = method/version
         // [2] = uri/status
         // [1] = version/msg
         // [0] = start index
-        u16_t request_line[4];
-    } request_line_t;
+        u16_t req_line[4];
+    };
 
     typedef struct
     {
@@ -134,26 +136,23 @@ namespace dhttp
         size_t overflow;
     } recvbuf_t;
 
-    typedef struct
+    struct
     {
-        request_line_t request; // request/response line
+        req_line request; // request/response line
         reqbuf_t       hf;      // header fields
         recvbuf_t      recvb;   // input buffer
         size_t         size;    // size of bytes parsed
         bool           done;
     } header_t;
 
-    using state_t = struct
+    struct req_state
     {
-
-        simd  v             = 0; // current vector lane
         u16_t pos           = 0; // absolute index of last byte parsed
         u16_t j             = 3; // request line field count (0, 3)
-        bool  parse_noinit  = 1; // true if decoding of request/status-line is pending (not started)
         bool  trailing_sp   = 0; // carry of trailing sp
         bool  trailing_cr   = 0;
-        bool  resume        = 0;
         bool  req_line      = 0; // request line
+        bool  no_init       = 1; // true if decoding of request/status-line is pending (not started)
         bool  pending_name  = 0;
         bool  pending_value = 0;
     };
@@ -495,25 +494,36 @@ namespace dhttp
             return *this;
         }
 
-        static bool testzero(const simd64& v) const
+        static bool testzero(const simd64& v)
         {
             return _mm256_testz_si256(v.lo) or _mm256_testz_si256(v.hi);
         }
 
-        static u64_t movemask(const simd64& v) const
+        static u64_t movemask(const simd64& v)
         {
             return U64(_mm256_movemask_epi8(v.hi)) << 32 | _mm256_movemask_epi8(v.lo);
         }
 
-        static simd64 cmpglt(const simd64& v, u8_t a, u8_t b) const
+        static simd64 cmpglt(const simd64& v, u8_t a, u8_t b)
         {
             return {_mm256_cmpglt_epi8(v.lo, a, b), _mm256_cmpglt_epi8(v.hi, a, b)};
         }
 
-#if     defined(HAVE_SHUFFLE__)
-        static simd64 shufb(const simd64& v, const simd64& tab) const
+        static simd64 cmpgeq(const simd64& u, const simd64& v)
         {
-            return {_mm256_shuffle_epi8(u.lo, tab.lo), _mm256_shuffle_epi8(u.hi, tab.hi)};
+            return {_mm256_cmpgeq_epi8(u.lo, v.lo), _mm256_cmpglt_epi8(u.hi, v.hi)};
+        }
+
+        static simd64 cmpgeq(const simd64& u, const u8_t& c)
+        {
+            base::type v = _mm256_set1_epi8(c);
+            return {_mm256_cmpgeq_epi8(u.lo, v.lo), _mm256_cmpglt_epi8(u.hi, v.hi)};
+        }
+
+#if     defined(HAVE_SHUFFLE__)
+        static simd64 shufb(const simd64& u, const simd64& v)
+        {
+            return {_mm256_shuffle_epi8(u.lo, v.lo), _mm256_shuffle_epi8(u.hi, v.hi)};
         }
 #endif
     };
