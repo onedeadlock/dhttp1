@@ -82,42 +82,8 @@ namespace dhttp
     using u16_t = std::uint16_t;
     using u8_t  = std::uint8_t;
 
-    constexpr size_t HEADER_BUF_SIZE_MAX   = 16284;
-    constexpr size_t HEADER_BUF_SIZE       = 8192;
-    constexpr size_t REQUEST_LINE_MAX_SIZE = 8192;
-    constexpr size_t MAX_HEADER            = 64;
-    constexpr size_t MAX_LOAD_SIZE         = 64;
-
-    enum
-    {
-        COMPLETE          = 0,
-        INCOMPLETE        = 1,
-        EXPECT_DATA       = 2,
-        ERROR             = -1,
-        MAX_SIZE_EXCEEDED = -2,
-        RESUME            = 128,
-        STATE_TRAILING_CR = 1,
-        unfinished_header_name = 0x11
-    };
-
-    typedef struct
-    {
-        uint16_t pos;
-        uint16_t len;
-    } pos_len_t;
-
-    typedef struct
-    {
-        pos_len_t name;
-        pos_len_t value;
-    } req_t;
-
-
-    typedef struct
-    {
-        req_t *req_buf;
-        size_t n;
-    } reqbuf_t;
+    constexpr int COMPLETE = 0;
+    constexpr int EXPECT_DATA = 1;
 
     struct req_line
     {
@@ -128,22 +94,6 @@ namespace dhttp
         // [0] = start index
         u16_t req_line[4];
     };
-
-    typedef struct
-    {
-        u8_t  *recvbuf;
-        size_t capacity;
-        size_t overflow;
-    } recvbuf_t;
-
-    struct
-    {
-        req_line request; // request/response line
-        reqbuf_t       hf;      // header fields
-        recvbuf_t      recvb;   // input buffer
-        size_t         size;    // size of bytes parsed
-        bool           done;
-    } header_t;
 
     struct req_state
     {
