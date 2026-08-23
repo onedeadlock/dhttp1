@@ -68,6 +68,7 @@
 
 #define lsb(x)   ((x) & -(x))        // isolate lsb
 #define trim(x)  ((x) & ~((x) << 1)) // set only lsb of every bit run, that is, given 0b100111100001, return 0b100000100001
+#define trimu(x) ((x) & ~((x) >> 1))
 
 namespace dhttp
 {
@@ -459,15 +460,27 @@ namespace dhttp
             return {_mm256_cmpglt_epi8(v.lo, a, b), _mm256_cmpglt_epi8(v.hi, a, b)};
         }
 
-        static simd64 cmpgeq(const simd64& u, const simd64& v)
+        static simd64 cmpeq(const simd64& u, const simd64& v)
         {
-            return {_mm256_cmpgeq_epi8(u.lo, v.lo), _mm256_cmpglt_epi8(u.hi, v.hi)};
+            return {_mm256_cmpeq_epi8(u.lo, v.lo), _mm256_cmpeq_epi8(u.hi, v.hi)};
         }
 
-        static simd64 cmpgeq(const simd64& u, const u8_t& c)
+        static simd64 cmpeq(const simd64& u, const u8_t& c)
         {
             base::type v = _mm256_set1_epi8(c);
-            return {_mm256_cmpgeq_epi8(u.lo, v.lo), _mm256_cmpglt_epi8(u.hi, v.hi)};
+            return {_mm256_cmpeq_epi8(u.lo, v.lo), _mm256_cmpeq_epi8(u.hi, v.hi)};
+        }
+
+         static simd64 sign(const simd64& u)
+        {
+            std::assert(0, "implement me"); // TODO
+            return {0, 0};
+        }
+
+        static simd64 andnot(const simd64& u, simd64_t &v)
+        {
+            std::assert(0, "implement me"); // TODO
+            return {0, 0};
         }
 
 #if     defined(HAVE_SHUFFLE__)

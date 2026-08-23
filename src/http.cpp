@@ -187,33 +187,32 @@
         return (req_size(req, i[0]) == req_version_required_size) and req_version_is_http_1(in + req[i[0]]);
     }
 
-    #if 0
-    inline bool req_single_header_value(simd &v, req_t &header, const uint8_t *, u64_t lf, u64_t cr, u64_t crlf)
+
+    inline bool req_header_value(const simd &v, const u64_t lf, const u64_t cr, const u64_t crlf)
     {
-        // TODO: sp
-        u64_t valid_field = simd::movemask(simd::cmpglt(v, '\x20', '\x7f') | (v & '\x80'));
-        if unlikely (~(valid_field) | lf | cr)
-            return false;
-        return true;
+        return false;
     }
 
-    inline bool req_header_value(req_t &header, const uint8_t *, u64_t lf, u64_t cr, u64_t crlf)
+    inline bool req_header_value(const simd &v, const u64_t lf, const u64_t cr, const u64_t crlf, u64_t &mask)
     {
-        #if 0
-        u64_t valid_field = simd::movemask(simd::cmpglt(v, '\x20', '\x7f') | (v & '\x80'));
-        if unlikely (~(valid_field | sp) | lf | cr)
-            return false;
-        #endif
-        return true;
+        if constexpr (HAVE_SHUFFLE__)
+        {
+            // TODO: use shuffle (pshufb)
+            return 0;
+        }
+
+        static const simd sp{'\x20'}, htab{'\x9'};
+        simd z = simd::cmpglt(v, '\x19', '\x7f') | simd::sign(v) | simd::cmpeq(v, '\xa') | simd::cmpeq(v, '\xd');
+        mask   = simd::movemask(simd::andnot(z, simd::cmpeq(v, sp) | simd::cmpeq(v, htab)));
+        return not simd::testzero(z | htab) and ((cr & 0x80000000000000000ULL | lf) and crlf);
     }
-    #endif
 
     int http::parse_request_line(const void *in, const std::size_t size, const simd &v, u64_t &lf, u64_t &cr, u64_t &crlf)
     {
         static const simd vsp  {'\x20'};
         static const simd vhtab{'\x9' };
 
-        const u64_t sp        = simd::movemask(simd::cmpgeq(v, vsp) | simd::cmpgeq(v, vhtab));
+        const u64_t sp        = simd::movemask(simd::cmpeq(v, vsp) | simd::cmpeq(v, vhtab));
         const u64_t valid_sp  = ~static_cast<const u64_t>(state.trailing_sp) & trim(sp);
         const u64_t tchar     = simd::movemask(simd::cmpglt(v, '\x20', '\x7f')) | valid_sp;
 
@@ -253,12 +252,14 @@
     template <typename T = u16_t, std::size_t out_size>
     int http::parse_header(void *in, size_t in_size, std::array<req<T>, out_size> &out, const simd &v, u64_t &lf, u64_t &cr, u64_t &crlf)
     {
+        static const simd v_col{'\x3a'};
         auto &header = out[state.j];
+
         if (state.pending_value)
         {
             if (not crlf)
                 return (header.value.len += 64, 0);
-            if unlikely (not req_header_value(header, in, lf, cr, crlf))
+            if unlikely (not req_header_value(v, lf, cr, crlf))
             {
                 if (state.trailing_cr = static_cast<bool>(cr & 0x8000000000000000ULL); state.trailing_cr)
                     return 0;
@@ -268,52 +269,58 @@
             state.j += 1;
         }
 
+        u64_t col = simd::movemask(simd::cmpeq(v, v_col));
+
         if unlikely (state.pending_name)
         {
             // names are mostly short
-            if unlikely(crlf)
+            if unlikely (crlf)
                 return -400;
             if unlikely (not col)
                 return (header.name.len += 64, 0);
         }
 
-        while (col)
+        if (col)
         {
-            const u64_t first_col = lsb(col);
-            const u64_t eol = lsb(crlf & xlsfill(first_col)); // next crlf after first colon
-            auto &header = out[state.j];
-
-            if unlikely (eol and eol < first_col)
+            u64_t mask = 0;
+            if unlikely (req_header_value(v, lf, cr, crlf, mask) is false)
                 return -400;
-
-            //////////////// HEADER NAME ////////////////
-            if likely (not state.pending_name)
-                header.name.pos = state.pos;
-            header.name.len += tzcnt(first_col);
-            if unlikely (not req_header_name(static_cast<const u8_t *>(in) + header.name.pos, header.name.len))
-                return -400;
-
-            //////////////// HEADER VALUE /////////////////
-            header.value.pos = header.value.pos + header.value.len + 1;
-            if not (eol)
+            
+            while (col)
             {
-                header.value.len = 1 + 64 - header.value.len;
-                state.pending_name = true;
-                return 0;
-            }
-            header.value.len = tzcnt(eol) - header.name.len;
-            if unlikely (0 and not req_single_header_value(state.v, header, in, lf, cr, crlf))
-             {
-                if (state.trailing_cr = static_cast<bool>(cr & 0x8000000000000000ULL); state.trailing_cr)
+                const u64_t first_col = lsb(col);
+                const u64_t pre_col = xlsfill(first_col);
+                const u64_t eol = lsb(crlf & pre_col); // next crlf after first colon
+                auto &header = out[state.j];
+
+                if unlikely (eol and eol < first_col)
+                    return -400;
+
+                //////////////// HEADER NAME ////////////////
+                if likely (not state.pending_name)
+                    header.name.pos = state.pos;
+                header.name.len += tzcnt(first_col) - 1;
+                if unlikely (not req_header_name(static_cast<const u8_t *>(in) + header.name.pos, header.name.len))
+                    return -400;
+
+                //////////////// HEADER VALUE /////////////////
+                mask &= pre_col;
+                header.value.pos = tzcnt(mask);
+                if not (eol)
+                {
+                    header.value.len = 63 - header.value.len;
+                    state.pending_name = true;
                     return 0;
-                return -400;
-             }
-        
-            col  &= xlsfill(eol);
-            crlf &= crlf - 1;
-            state.j += 1;
+                }
+                header.value.len = tzcnt(trimu(mask)) - header.name.len;
+
+                col &= pre_col;
+                crlf &= crlf - 1;
+                state.j += 1;
+            }
         }
         state.pending_name = crlf and not col;
+        state.trailing_cr  = static_cast<bool>(cr & 0x8000000000000000ULL);
         return 0;
     }
 
@@ -322,9 +329,8 @@
     {
         static_assert(out_size != 0);
 
-        static const simd vlf {'\xa'};
-        static const simd vcr {'\xd'};
-        static const simd vcol{'\x3a'};
+        static const simd v_lf {'\xa'};
+        static const simd v_cr {'\xd'};
 
         const std::size_t n = (in_size + 63) & ~(std::size_t)63; // align read/load size to 64
 
@@ -333,9 +339,8 @@
             u8_t *b = static_cast<u8_t *>(in) + j;
             simd::v = b;
 
-            u64_t lf   = simd::movemask(simd::cmpeq(v, vlf ));
-            u64_t cr   = simd::movemask(simd::cmpeq(v, vcr ));
-            u64_t col  = simd::movemask(simd::cmpeq(v, vcol));
+            u64_t lf   = simd::movemask(simd::cmpeq(v, v_lf ));
+            u64_t cr   = simd::movemask(simd::cmpeq(v, v_cr ));
             u64_t crlf = cr & (lf << 1);
 
             if (state.req_line isnot done and parse_request_line(in, size, v, lf, cr, crlf) < 0)
