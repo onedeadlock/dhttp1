@@ -149,7 +149,7 @@
         const u64_t r = len & 7;
 
         for (u16_t j = 0; j < e and valid; j++)
-            valid = req_tchar(reinterpret_cast<const u64_t *>(buf) + j, 0);
+            valid = req_tchar(reinterpret_cast<const u64_t *>(buf) + j, ~0ULL);
         if likely (valid and r)
             return r == 1 ? req_single_tchar(*(buf + e)) : req_tchar(reinterpret_cast<const u64_t *>(buf) + e, (1U << (r << 3)) - 1); // only check 'r' bytes
         return valid;
