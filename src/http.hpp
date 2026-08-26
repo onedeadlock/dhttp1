@@ -131,10 +131,11 @@ namespace dhttp
 
 #if HAVE__AVX2__
 #   define HAVE_SHUFFLE__ 1
+#   error "TODO implement cmpgt1, cmpeq0, cmpeq2"
 #elif HAVE__SSE2__
     ///////////////////////////
     ///////////////////////////
-    typedef struct alignas(32)
+    typedef struct
     {
         __m128i lo, hi;
     } __m256i;
@@ -155,6 +156,25 @@ namespace dhttp
     {
 
         return static_cast<u32_t>(_mm_movemask_epi8(x.hi)) << 16 | _mm_movemask_epi8(x.lo);
+    }
+
+    inline __m256i _mm256_cmpeqz_epi8(const __m256i v)
+    {
+        __m128i z = _mm_setzero_si128();
+        return {_mm_cmpeq_epi8(v.lo, z), _mm_cmpeq_epi8(v.hi, z)};
+    }
+
+    inline __m256i _mm256_cmpeq_epi8(const __m256i u, const __m256i v)
+    {
+         return {_mm_cmpeq_epi8(u.lo, v.lo), _mm_cmpeq_epi8(u.hi, v.hi)};
+    }
+
+    inline __m256i _mm256_cmpeq2_epi8(const __m256i u, const __m256i v, const __m256i w)
+    {
+        return {
+            _mm_or_si128(_mm_cmpeq_epi8(u.lo, v.lo), _mm_cmpeq_epi8(u.lo, w.lo)),
+            _mm_or_si128(_mm_cmpeq_epi8(u.hi, v.hi), _mm_cmpeq_epi8(u.hi, w.hi)),
+        };
     }
 
     inline __m256i _mm256_cmpgt1_epi8(const __m256i v, const u8_t a)
@@ -198,8 +218,7 @@ namespace dhttp
 #ifdef HAVE__SSE4_2__
         return _mm_test_all_zeros(u.lo, u.lo) or _mm_test_all_zeros(u.hi, u.hi);
 #else
-        static const __m128i z = _mm_setzero_si128();
-        return static_cast<bool>(_mm_movemask_epi8(_mm_and_si128(_mm_cmpeq_epi8(u.lo, z), _mm_cmpeq_epi8(u.hi, z))));
+        return static_cast<bool>(_mm256_movemask_epi8(_mm256_cmpeqz_epi8(u)));
 #endif
     }
 
@@ -236,38 +255,49 @@ namespace dhttp
 
     inline uint16_t _mm256_movemask_epi8(__m256i const u)
     {
-        static constexpr u64_t mp = 0x0002040810204081ULL;
+        static constexpr u64_t p = 0x0002040810204081ULL;
         static constexpr u64_t c  = 0x8080808080808080ULL;
+        return ((u.hi >> 64) * p >> 32) & 0xff000000ULL | (u.hi * p  >> 40) & 0xff0000ULL |
+               ((u.lo >> 64) * p >> 48) & 0x0000ff00ULL | (u.lo * p) >> 56;
+    }
 
-#if defined(__BMI2__) || HAVE_USE_PEXT__
-        return _pext_u64(u.hi >> 64, c) << 48 | _pext_u64(u.hi & 0xffffffffffffffffULL, c) << 32 |
-               _pext_u64(u.lo >> 64, c) << 16 | _pext_u64(u.lo & 0xffffffffffffffffULL, c);
-#else
-        return ((u.hi >> 64) * mp >> 32) & 0xff000000ULL | (u.hi * mp  >> 40) & 0xff0000ULL |
-               ((u.lo >> 64) * mp >> 48) & 0x0000ff00ULL | (u.lo * mp) >> 56;
-#endif
+    inline u128_t _cmpeqz(const u128_t v)
+    {
+        static constexpr u128_t c7f = U128(0x7f7f7f7f7f7f7f7fULL) << 64 | 0x7f7f7f7f7f7f7f7fULL;
+        static constexpr u128_t c80 = U128(0x8080808080808080ULL) << 64 | 0x8080808080808080ULL;
+        return ~(v | ((v & c7f) + c7f)) & c80;
+    }
+
+    inline u128_t _cmpgtz(const u128_t v)
+    {
+        static constexpr u128_t c7f = U128(0x7f7f7f7f7f7f7f7fULL) << 64 | 0x7f7f7f7f7f7f7f7fULL;
+        static constexpr u128_t c80 = U128(0x8080808080808080ULL) << 64 | 0x8080808080808080ULL;
+        return (v | ((v & c7f) + c7f)) & c80;
+    }
+
+    inline __m256i _mm256_cmpeqz_epi8(const __m256i u)
+    {
+        return {_cmpeqz(u.lo), _cmpeqz(u.hi)};
     }
 
     inline __m256i _mm256_cmpeq_epi8(const __m256i u, const __m256i v)
     {
-        static constexpr u128_t c1 = U128(0x1000100010001000ULL) << 64 | 0x0100010001000100ULL;
-        static constexpr u128_t c2 = U128(0x1000100010001000ULL) << 64 | 0x0001000100010001ULL;
-        static constexpr u128_t c3 = U128(0x8080808080808080ULL) << 64 | 0x8080808080808080ULL;
-
-        return {
-            ((((u.lo ^ v.lo) | c2) - c1) | (((u.lo ^ v.lo) | c1) - c2)) & (~(u.lo ^ v.lo) & c3),
-            ((((u.hi ^ v.hi) | c2) - c1) | (((u.hi ^ v.hi) | c1) - c2)) & (~(u.hi ^ v.hi) & c3),
-        };
+        return {_cmpeqz(u.lo ^ v.lo), _cmpeqz(u.hi ^ v.hi)};
     }
 
-    constexpr inline __m256i _mm256_cmpgt1_epi8(const __m256i v, const u8_t a)
+    inline __m256i _mm256_cmpeq2_epi8(const __m256i u, const __m256i v, const __m256i w)
+    {
+        return {_cmpeqz((u.lo ^ v.lo) | (u.lo ^ w.lo)), _cmpeqz((u.hi ^ v.lo) | (u.hi ^ w.hi))};
+    }
+
+    inline __m256i _mm256_cmpgt1_epi8(const __m256i v, const u8_t a)
     {
         static constexpr u64_t c = 0x8080808080808080ULL;
         const u64_t x = (0x7f - a) * 0x101010101010101ULL;
-
         return {((v.lo + x) | v.lo) & c, ((v.hi + x) | v.hi) & c};
     }
-    constexpr inline __m256i _mm256_cmpglt_epi8(const __m256i v, const u8_t a, const u8_t b)
+    
+    inline __m256i _mm256_cmpglt_epi8(const __m256i v, const u8_t a, const u8_t b)
     {
         static constexpr u128_t c1 = U128(0x101010101010101ULL) << 64 | 0x101010101010101ULL;
         static constexpr u128_t c2 = c1 * 127;
@@ -305,7 +335,7 @@ namespace dhttp
 #define HAVE__128__ 1
     //////////////////////////
     //////////////////////////
-    typedef struct alignas(32)
+    typedef struct
     {
         u64_t lo, vlo, hi, vhi;
     } __m256i;
@@ -318,7 +348,7 @@ namespace dhttp
         return {x[0], x[1], x[2], x[3]};
     }
 
-    inline __m256i _mm256_set1_epi8(const u8_t v)
+    inline constexpr __m256i _mm256_set1_epi8(const u8_t v)
     {
         const u64_t x = U64(v) * 0x101010101010101ULL;
         return {x, x, x, x};
@@ -326,33 +356,15 @@ namespace dhttp
 
     inline u32_t _mm256_movemask_epi8(const __m256i u)
     {
-        static constexpr u64_t mp = 0x0002040810204081ULL;
+        static constexpr u64_t p = 0x0002040810204081ULL;
         static constexpr u64_t c  = 0x8080808080808080ULL;
 
-#if defined(__BMI2__) && HAVE_USE_PEXT__
-        const u32_t x = _pext_u64(u.lo, c) << 8 | _pext_u64(u.vlo, c);
-        const u32_t y = _pext_u64(u.hi, c) << 8 | _pext_u64(u.vhi, c);
-#else
-        const u32_t x = ((((u.lo * mp) >> 48) & 0xff00ULL) | ((u.vlo * mp) >> 56));
-        const u32_t y = ((((u.hi * mp) >> 48) & 0xff00ULL) | ((u.vhi * mp) >> 56));
-#endif
+        const u32_t x = ((((u.lo * p) >> 48) & 0xff00ULL) | ((u.vlo * p) >> 56));
+        const u32_t y = ((((u.hi * p) >> 48) & 0xff00ULL) | ((u.vhi * p) >> 56));
         return y << 16 | x;
     }
 
-    constexpr inline __m256i _mm256_cmpgt1_epi8(const __m256i v, const u64_t a)
-    {
-        static constexpr u64_t c = 0x8080808080808080ULL;
-        const u64_t x = (0x7f - a) * 0x101010101010101ULL;
-
-        return {
-            (((v.lo  + x) | v.lo)  & c),
-            (((v.vlo + x) | v.vlo) & c),
-            (((v.hi  + x) | v.hi)  & c),
-            (((v.vhi + x) | v.vhi) & c),
-        };
-    }
-
-    constexpr inline __m256i _mm256_cmpglt_epi8(const __m256i v, const u64_t a, const u64_t b)
+    inline constexpr __m256i _mm256_cmpglt_epi8(const __m256i v, const u64_t a, const u64_t b)
     {
         const u64_t x = (0x7f - a) * 0x101010101010101ULL;
         const u64_t y = (0x7f + b) * 0x101010101010101ULL;
@@ -364,19 +376,51 @@ namespace dhttp
             y - (v.vhi & 0x7f7f7f7f7f7f7f7fULL) & x + (v.vhi & 0x7f7f7f7f7f7f7f7fULL) & (~v.vhi & 0x8080808080808080ULL),
         };
     }
+ 
+    inline u64_t _cmpeqz(const u64_t v)
+    {
+        return ~(v | ((v & 0x7f7f7f7f7f7f7f7fULL) + 0x7f7f7f7f7f7f7f7fULL)) & 0x8080808080808080ULL;
+    }
+
+    inline u64_t _cmpgtz(const u64_t v)
+    {
+        return (v | ((v & 0x7f7f7f7f7f7f7f7fULL) + 0x7f7f7f7f7f7f7f7fULL)) & 0x8080808080808080ULL;
+    }
+
+     inline __m256i _mm256_cmpeqz_epi8(const __m256i u)
+    {
+        return {_cmpeqz(u.lo),  _cmpeqz(u.vlo),  _cmpeqz(u.hi),  _cmpeqz(u.vhi)};
+    }
 
     inline __m256i _mm256_cmpeq_epi8(const __m256i u, const __m256i v)
     {
-        static constexpr u64_t c1 = 0x0100010001000100ULL; // even bits
-        static constexpr u64_t c2 = 0x0001000100010001ULL; // odd bits
-        static constexpr u64_t c3 = 0x8080808080808080ULL;
+        return {_cmpeqz(u.lo ^ v.lo),  _cmpeqz(u.vlo ^ v.vlo),  _cmpeqz(u.hi ^ v.hi),  _cmpeqz(u.vhi ^ v.vhi)};
+    }
+
+    inline __m256i _mm256_cmpeq2_epi8(const __m256i u, const __m256i v, const __m256i w)
+    {
+        return {
+            _cmpeqz((u.lo ^ v.lo) | (u.lo ^ w.lo)), _cmpeqz((u.vlo ^ v.vlo) | (u.vlo ^ w.vlo)),
+            _cmpeqz((u.hi ^ v.lo) | (u.hi ^ w.hi)), _cmpeqz((u.vhi ^ v.vhi) | (u.vhi ^ w.vhi)),
+        };
+    }
+    
+    inline constexpr __m256i _mm256_cmpgt1_epi8(const __m256i v, const u64_t a)
+    {
+        constexpr u64_t c = 0x8080808080808080ULL;
+        const u64_t x = (0x7f - a) * 0x101010101010101ULL;
 
         return {
-            ((((u.lo  ^ v.lo)  | c2) - c1) | (((u.lo  ^ v.lo)  | c1) - c2)) & (~(u.lo  ^ v.lo)  & c3),
-            ((((u.vlo ^ v.vlo) | c2) - c1) | (((u.vlo ^ v.vlo) | c1) - c2)) & (~(u.vlo ^ v.vlo) & c3),
-            ((((u.hi  ^ v.hi)  | c2) - c1) | (((u.hi  ^ v.hi)  | c1) - c2)) & (~(u.hi  ^ v.hi)  & c3),
-            ((((u.vhi ^ v.vhi) | c2) - c1) | (((u.vhi ^ v.vhi) | c1) - c2)) & (~(u.vhi ^ v.vhi) & c3),
+            (((v.lo  + x) | v.lo)  & c),
+            (((v.vlo + x) | v.vlo) & c),
+            (((v.hi  + x) | v.hi)  & c),
+            (((v.vhi + x) | v.vhi) & c),
         };
+    }
+
+    inline __m256i _mm256_cmpgtz_epi8(const __m256i v)
+    {
+        return {_cmpgtz(v.lo), _cmpgtz(v.vlo), _cmpgtz(v.hi), _cmpgtz(v.vhi)};
     }
 
     inline __m256i _mm256_and_si256(const __m256i u, const __m256i v)
@@ -469,6 +513,16 @@ namespace dhttp
         {
             base::type v = _mm256_set1_epi8(c);
             return {_mm256_cmpeq_epi8(u.lo, v.lo), _mm256_cmpeq_epi8(u.hi, v.hi)};
+        }
+
+        static simd64 cmpeqz(const simd64& u)
+        {
+            return {_mm256_cmpeqz_epi8(u.lo, v.lo), _mm256_cmpeqz_epi8(u.hi, v.hi)};
+        }
+
+        static simd64 cmpeq2(const simd64& u, const simd64& v, const simd64& w)
+        {
+            return {_mm256_cmpeq2_epi8(u.lo, v.lo), _mm256_cmpeq2_epi8(u.hi, v.hi)};
         }
 
          static simd64 sign(const simd64& u)

@@ -16,13 +16,22 @@
     auto xlsfill = [](u64_t x){ return  x ^ -x; }; // ~blsfill
     auto tzcnt   = [](u64_t v){ return __builtin_ctzll(v); };
 
-    static constexpr u8_t tchar_map[] = "\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0" ////////////////////////////////////
-                                        "\x0\x80\x0\x80\x80\x80\x80\x0\x0\x0\x80\x0\x80\x80\x80\x0\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x0\x0\x0\x0\x0\x00" ////////////////
-                                        "\x0\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x0\x0\x0" ////////////////
-                                        "\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x0\x80\x0\x80\x0"
-                                        "\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x00"
-                                        "\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x00"
-                                        "\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0"; ///////////
+    static constexpr u8_t tchar_map[] = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+                                        "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+                                        "\x00\x80\x00\x80\x80\x80\x80\x00\x00\x00\x80\x00\x80\x80\x80\x00"
+                                        "\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x00\x00\x00\x00\x00\x00"
+                                        "\x00\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80"
+                                        "\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x00\x00\x00\x80\x80"
+                                        "\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80"
+                                        "\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x00\x80\x00\x80\x00"
+                                        "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+                                        "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+                                        "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+                                        "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+                                        "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+                                        "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+                                        "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+                                        "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00";
     
     template <typename T>
     struct req
@@ -77,7 +86,7 @@
     };
 
     /////////////////////////////////////////////////////////////
-    // ASCII LETTERS (C > 64/96 AND C < 91/123) FOR C != 1
+    // ASCII LETTERS (C > 64/96 AND C < 91/123)
     /////////////////////////////////////////////////////////////
     inline u64_t ascii_letters(const u64_t v)
     {
@@ -87,7 +96,7 @@
     }
 
     //////////////////////////////////////////////////////
-    // ASCII NUMBERS (C > 47 AND C < 58) FOR C != 1
+    // ASCII NUMBERS (C > 47 AND C < 58)
     //////////////////////////////////////////////////////
     inline u64_t ascii_numbers(const u64_t v)
     {
@@ -101,7 +110,7 @@
         static constexpr u64_t hi = 0x0100010001000100ULL;
         static constexpr u64_t lo = 0x0001000100010001ULL;
         static constexpr u64_t h = static_cast<u64_t>('\x2d') * 0x101010101010101ULL;
-        return (((v ^ h | lo) - hi) | ((v ^ h | hi) - lo)) & (~(v ^ h) & 0x8080808080808080ULL);
+        return ~((v ^ h) | (((v ^ h) & 0x7f7f7f7f7f7f7f7fULL) + 0x7f7f7f7f7f7f7f7fULL)) & 0x8080808080808080ULL;
     }
 
     inline u64_t ascii_fast_tchar(const u64_t v)
@@ -123,7 +132,10 @@
     inline u64_t req_valid_tchar(const uint8_t *b)
     {
         if constexpr (SUPPORT_FULL_TCHAR)
-            return U64(tchar_map[b[0]]) | U64(tchar_map[b[1]]) << 8 | U64(tchar_map[b[2]]) << 16 | U64(tchar_map[b[3]]) << 24 | U64(tchar_map[b[4]]) << 32 | U64(tchar_map[b[5]]) << 40 | U64(tchar_map[b[6]]) << 48 | U64(tchar_map[b[7]]) << 56;
+            return U64(tchar_map[b[0]]) << 0U | U64(tchar_map[b[1]]) << 8U |
+                   U64(tchar_map[b[2]]) << 16 | U64(tchar_map[b[3]]) << 24 |
+                   U64(tchar_map[b[4]]) << 32 | U64(tchar_map[b[5]]) << 40 |
+                   U64(tchar_map[b[6]]) << 48 | U64(tchar_map[b[7]]) << 56;
         return 0;
     }
 
@@ -177,13 +189,13 @@
 
     inline u16_t http::req_size(const u16_t (&req)[], const int i) const
     {
-        return http::req_type is _req_type::type::request ? (req[i - 0] - req[i + 1]) - 1
-                                                                 : (req[i - 1] - req[i - 0]) - 1; // -1 for the sp seperator
+        return -http::req_type is _req_type::type::request ? (req[i - 0] - req[i + 1]) - 1
+                                                           : (req[i - 1] - req[i - 0]) - 1; // -1 for the sp seperator
     }
 
     inline bool http::req_version_tag(const u16_t (&req)[], const void *in, const _req_type::req_index &i)
     {
-        static constexpr u16_t req_version_required_size = 8; // strlen(HTTP/1.x)
+        static constexpr u16_t req_version_required_size = 8; // len(HTTP/1.x)
         return (req_size(req, i[0]) == req_version_required_size) and req_version_is_http_1(in + req[i[0]]);
     }
 
@@ -200,10 +212,9 @@
             // TODO: use shuffle (pshufb)
             return 0;
         }
-
         static const simd sp{'\x20'}, htab{'\x9'};
-        simd z = simd::cmpglt(v, '\x19', '\x7f') | simd::sign(v) | simd::cmpeq(v, '\xa') | simd::cmpeq(v, '\xd');
-        mask   = simd::movemask(simd::andnot(z, simd::cmpeq(v, sp) | simd::cmpeq(v, htab)));
+        simd z = simd::cmpglt(v, '\x19', '\x7f') | simd::sign(v);
+        // mask   = simd::movemask(simd::andnot(z, simd::cmpeq(v, sp) | simd::cmpeq(v, htab)));
         return not simd::testzero(z | htab) and ((cr & 0x80000000000000000ULL | lf) and crlf);
     }
 
@@ -212,7 +223,7 @@
         static const simd vsp  {'\x20'};
         static const simd vhtab{'\x9' };
 
-        const u64_t sp        = simd::movemask(simd::cmpeq(v, vsp) | simd::cmpeq(v, vhtab));
+        const u64_t sp        = simd::movemask(simd::cmpeq2(v, vsp, vhtab));
         const u64_t valid_sp  = ~static_cast<const u64_t>(state.trailing_sp) & trim(sp);
         const u64_t tchar     = simd::movemask(simd::cmpglt(v, '\x20', '\x7f')) | valid_sp;
 
@@ -252,31 +263,23 @@
     template <typename T = u16_t, std::size_t out_size>
     int http::parse_header(void *in, size_t in_size, std::array<req<T>, out_size> &out, const simd &v, u64_t &lf, u64_t &cr, u64_t &crlf)
     {
-        static const simd v_col{'\x3a'};
         auto &header = out[state.j];
 
-        if (state.pending_value)
+        if (state.pending_value and not )
         {
             if (not crlf)
-                return (header.value.len += 64, 0);
-            if unlikely (not req_header_value(v, lf, cr, crlf))
-            {
-                if (state.trailing_cr = static_cast<bool>(cr & 0x8000000000000000ULL); state.trailing_cr)
-                    return 0;
-                return -400;
-            }
-            crlf &= crlf - 1;
-            state.j += 1;
+                return (header.value.len += 64, req_header_value(v, lf, cr, crlf));
+            // TODO
         }
-
+        static const simd v_col{'\x3a'};
         u64_t col = simd::movemask(simd::cmpeq(v, v_col));
 
         if unlikely (state.pending_name)
         {
             // names are mostly short
-            if unlikely (crlf)
+            if unlikely (crlf and (not col or lsb(crlf) < lsb(col)))
                 return -400;
-            if unlikely (not col)
+            if not (col)
                 return (header.name.len += 64, 0);
         }
 
