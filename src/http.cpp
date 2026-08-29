@@ -4,43 +4,47 @@
 #define isnot !=
 #define not(x) (!(x))
 
-namespace Dhttp::Implementation
+namespace Dhttp
 {
     bool http_1 = true;
     bool done   = true;
 
-    auto tzmask  = [](u64_t x){ return ~x & x - 1; };
-    auto blsmask = [](u64_t x){ return  x ^ x - 1; };
-    auto blsr    = [](u64_t x){ return  x & x - 1; };
-    auto blsfill = [](u64_t x){ return  x | x - 1; };
-    auto xlsfill = [](u64_t x){ return  x ^ -x; }; // ~blsfill
-    auto tzcnt   = [](u64_t v){ return __builtin_ctzll(v); };
-
-    static constexpr u8_t tchar_map[] = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
-                                        "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
-                                        "\x00\x80\x00\x80\x80\x80\x80\x00\x00\x00\x80\x00\x80\x80\x80\x00"
-                                        "\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x00\x00\x00\x00\x00\x00"
-                                        "\x00\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80"
-                                        "\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x00\x00\x00\x80\x80"
-                                        "\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80"
-                                        "\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x00\x80\x00\x80\x00"
-                                        "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
-                                        "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
-                                        "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
-                                        "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
-                                        "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
-                                        "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
-                                        "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
-                                        "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00";
-    
-    template <typename T>
+    template <typename T, size_t N>
     struct req
     {
-        static_assert(std::is_integral_v<T>);
-        struct
+        static_assert(std::is_integral_v<T> && N > 0);
+        static constexpr u64_t __size = N;
+        u64_t __used = 0;
+
+        using struct
         {
             T len, pos;
-        } name, value;
+        } __pair;
+
+        struct {
+            __pair name, value;
+        } pair [N];
+
+        u64_t size(void)
+        {
+            return __size;
+        }
+
+        u64_t used(void)
+        {
+            return __used;
+        }
+
+        u64_t set_used(T i)
+        {
+            assert( i < __size);
+            return __used = i;
+        }
+
+        decltype(auto) &&operator[](T i)
+        {
+            return pair[i];
+        }
     };
 
     struct _req_type
@@ -77,19 +81,18 @@ namespace Dhttp::Implementation
         u16_t req_size(const u16_t (&req)[], const int i) const;
         bool  req_version_is_http_1(const void *ver_string);
         bool  req_version_tag(const u16_t (&req)[], const void *buf, const _req_type::req_index& i);
-        template <typename T = u16_t, std::size_t out_size> int parse(void *in, size_t in_size, std::array<req<T>, out_size> &out);
+        template <typename T = u16_t, std::size_t out_size> int parse(void *in, size_t in_size, req<T, out_size> &out);
         int parse_request_line(const void *in, const std::size_t size, const simd &v, u64_t &lf, u64_t &cr, u64_t &crlf);
         template <typename T = u16_t, std::size_t out_size>
-        int parse_header(void *in, size_t in_size, std::array<req<T>, out_size> &out, const simd &v, u64_t &lf, u64_t &cr, u64_t &crlf);
-   
+        int parse_header(void *in, size_t in_size, req<T, out_size> &out, const simd &v, u64_t &lf, u64_t &cr, u64_t &crlf);
     };
 
     inline u64_t valid_tchar(simd &v)
     {
         if constexpr (HAVE_SHUFFLE__)
         {
-            static const simd lo{Tables::token_charset_bitmap};
-            static const simd hi{Tables::token_charset_bitmap + 64};
+            static const simd lo{tables::token_charset};
+            static const simd hi{tables::token_charset + 64};
             return simd::movemask(simd::shufb(lo, v) & simd::shufb(hi, v >> 4));
         }
         return 0;
@@ -98,10 +101,10 @@ namespace Dhttp::Implementation
     inline u64_t req_valid_tchar(const uint8_t *b)
     {
         if constexpr (SUPPORT_FULL_TCHAR)
-            return U64(tchar_map[b[0]]) << 0U | U64(tchar_map[b[1]]) << 8U |
-                   U64(tchar_map[b[2]]) << 16 | U64(tchar_map[b[3]]) << 24 |
-                   U64(tchar_map[b[4]]) << 32 | U64(tchar_map[b[5]]) << 40 |
-                   U64(tchar_map[b[6]]) << 48 | U64(tchar_map[b[7]]) << 56;
+            return U64(tables::tchar_map[b[0]]) << 0U | U64(tables::tchar_map[b[1]]) << 8U |
+                   U64(tables::tchar_map[b[2]]) << 16 | U64(tables::tchar_map[b[3]]) << 24 |
+                   U64(tables::tchar_map[b[4]]) << 32 | U64(tables::tchar_map[b[5]]) << 40 |
+                   U64(tables::tchar_map[b[6]]) << 48 | U64(tables::tchar_map[b[7]]) << 56;
         return 0;
     }
 
@@ -110,14 +113,14 @@ namespace Dhttp::Implementation
         if constexpr (OPTIMIZE_FOR_MOST_CASE)
         {
             // Most tokens are a-zA-Z0-9 and -; extra cost of full classification if the first check fails
-            return not(~Common::scalar::ascii_fast_tchar(*reinterpret_cast<const u64_t *>(b)) & mask and ~req_valid_tchar(reinterpret_cast<const u8_t *>(b)) & mask);
+            return not(~common::scalar::ascii_fast_tchar(*reinterpret_cast<const u64_t *>(b)) & mask and ~req_valid_tchar(reinterpret_cast<const u8_t *>(b)) & mask);
         }
         return not (~req_valid_tchar(reinterpret_cast<const u8_t *>(b)) & mask);
     }
 
     inline bool req_single_tchar(const uint8_t b)
     {
-        return tchar_map[b];
+        return tables::tchar_map[b];
     }
 
     inline bool req_header_name(const uint8_t *buf, const uint16_t len)
@@ -181,7 +184,7 @@ namespace Dhttp::Implementation
         static const simd sp{'\x20'}, htab{'\x9'};
         simd z = simd::cmpglt(v, '\x19', '\x7f') | simd::sign(v);
         // mask   = simd::movemask(simd::andnot(z, simd::cmpeq(v, sp) | simd::cmpeq(v, htab)));
-        return not simd::testzero(z | htab) and ((cr & 0x80000000000000000ULL | lf) and crlf);
+        return not simd::testzero(z | htab) and ((cr & common::constant::msb_64 | lf) and crlf);
     }
 
     int http::parse_request_line(const void *in, const std::size_t size, const simd &v, u64_t &lf, u64_t &cr, u64_t &crlf)
@@ -190,11 +193,11 @@ namespace Dhttp::Implementation
         static const simd vhtab{'\x9' };
 
         const u64_t sp        = simd::movemask(simd::cmpeq2(v, vsp, vhtab));
-        const u64_t valid_sp  = ~static_cast<const u64_t>(state.trailing_sp) & trim(sp);
+        const u64_t valid_sp  = ~static_cast<const u64_t>(state.trailing_sp) & common::bits::trim(sp);
         const u64_t tchar     = simd::movemask(simd::cmpglt(v, '\x20', '\x7f')) | valid_sp;
 
         auto has_any_rejected_token = [&](void)
-        { return (~tchar | lf | (cr & ~0x8000000000000000ULL)) & tzmask(crlf); };
+        { return (~tchar | lf | (cr & ~common::constant::msb_64)) & common::bits::tzmask(crlf); };
 
         if unlikely ((crlf & 0x02) and state.no_init)
             return  ((crlf & crlf >> 2) & 0x04) ? -400 /* empty request */ : -400 /* blank line */;
@@ -211,23 +214,23 @@ namespace Dhttp::Implementation
         }
 
         u64_t mask = sp | cr | lf;
-        for (u64_t umask = mask & blsmask(cr | lf); umask and state.j; umask &= umask - 1)
-            reqline.req_line[state.j--] = state.pos + tzcnt(umask);
+        for (u64_t umask = mask & common::bits::blsmask(cr | lf); umask and state.j; umask &= umask - 1)
+            reqline.req_line[state.j--] = state.pos + common::bits::tzcnt(umask);
 
         if not (not crlf)
         {
-            state.trailing_cr = static_cast<bool>(cr & 0x8000000000000000ULL);
-            state.trailing_sp = static_cast<bool>(sp & 0x8000000000000000ULL);
+            state.trailing_cr = static_cast<bool>(cr & common::constant::msb_64);
+            state.trailing_sp = static_cast<bool>(sp & common::constant::msb_64);
             return 0;
         }
-        mask &= tzmask(crlf), crlf &= mask, lf &= mask, cr &= mask;
+        mask &= common::bits::tzmask(crlf), crlf &= mask, lf &= mask, cr &= mask;
         state.pos = reqline.req_line[state.j + 1] + 2; // +2 for cr and lf
         state.req_line = done;
-        return -((state.j isnot 0) or (req_version_tag(reqline.req_line, in, _req_type::index[req_type]) isnot Implementation::http_1));
+        return -((state.j isnot 0) or (req_version_tag(reqline.req_line, in, _req_type::index[req_type]) isnot http_1));
     }
 
     template <typename T = u16_t, std::size_t out_size>
-    int http::parse_header(void *in, size_t in_size, std::array<req<T>, out_size> &out, const simd &v, u64_t &lf, u64_t &cr, u64_t &crlf)
+    int http::parse_header(void *in, size_t in_size, req<T, out_size> &out, const simd &v, u64_t &lf, u64_t &cr, u64_t &crlf)
     {
         auto &header = out[state.j];
 
@@ -243,7 +246,7 @@ namespace Dhttp::Implementation
         if unlikely (state.pending_name)
         {
             // names are mostly short
-            if unlikely (crlf and (not col or lsb(crlf) < lsb(col)))
+            if unlikely (crlf and (not col or common::bits::lsb(crlf) < common::bits::lsb(col)))
                 return -400;
             if not (col)
                 return (header.name.len += 64, 0);
@@ -257,9 +260,9 @@ namespace Dhttp::Implementation
             
             while (col)
             {
-                const u64_t first_col = lsb(col);
-                const u64_t pre_col = xlsfill(first_col);
-                const u64_t eol = lsb(crlf & pre_col); // next crlf after first colon
+                const u64_t first_col = common::bits::lsb(col);
+                const u64_t pre_col   = common::bits::xlsfill(first_col);
+                const u64_t eol       = common::bits::lsb(crlf & pre_col); // next crlf after first colon
                 auto &header = out[state.j];
 
                 if unlikely (eol and eol < first_col)
@@ -268,20 +271,20 @@ namespace Dhttp::Implementation
                 //////////////// HEADER NAME ////////////////
                 if likely (not state.pending_name)
                     header.name.pos = state.pos;
-                header.name.len += tzcnt(first_col) - 1;
+                header.name.len += common::bits::tzcnt(first_col) - 1;
                 if unlikely (not req_header_name(static_cast<const u8_t *>(in) + header.name.pos, header.name.len))
                     return -400;
 
                 //////////////// HEADER VALUE /////////////////
                 mask &= pre_col;
-                header.value.pos = tzcnt(mask);
+                header.value.pos = common::bits::tzcnt(mask);
                 if not (eol)
                 {
                     header.value.len = 63 - header.value.len;
                     state.pending_name = true;
                     return 0;
                 }
-                header.value.len = tzcnt(trimu(mask)) - header.name.len;
+                header.value.len = common::bits::tzcnt(common::bits::trim_u(mask)) - header.name.len;
 
                 col &= pre_col;
                 crlf &= crlf - 1;
@@ -289,12 +292,12 @@ namespace Dhttp::Implementation
             }
         }
         state.pending_name = crlf and not col;
-        state.trailing_cr  = static_cast<bool>(cr & 0x8000000000000000ULL);
+        state.trailing_cr  = static_cast<bool>(cr & common::constant::msb_64);
         return 0;
     }
 
     template <typename T = u16_t, std::size_t out_size>
-    int http::parse(void *in, size_t in_size, std::array<req<T>, out_size> &out)
+    int http::parse(void *in, size_t in_size, req<T, out_size> &out)
     {
         static_assert(out_size != 0);
 

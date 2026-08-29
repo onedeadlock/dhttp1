@@ -1,17 +1,12 @@
-#ifndef DHTTP_H
-#define DHTTP_H
+#pragma once
 #include "include/definiton.hpp"
 #include "common/common.hpp"
-
-#define lsb(x)   ((x) & -(x))        // isolate lsb
-#define trim(x)  ((x) & ~((x) << 1)) // set only lsb of every bit run, that is, given 0b100111100001, return 0b100000100001
-#define trimu(x) ((x) & ~((x) >> 1))
+#include "common/bits.hpp"
 
 namespace Dhttp
 {
     template <typename base> struct simd64;
     class http;
-    class Implemation;
 
     constexpr int COMPLETE = 0;
     constexpr int EXPECT_DATA = 1;
@@ -42,14 +37,14 @@ namespace Dhttp
     };
 
 
-    namespace Tables
+    namespace tables
     {
         /* High/low bitmap of ascii: !, #, \$, %, &, ', *, +, -, .,
                                           ^, _, `, |, A-Za-z0-9, :, /, ?, #,
                                           [, ], @, !, $, &, ', (, ), *, +, ,
                                           , ;, =
         */
-        alignas(64) uint8_t token_charset_bitmap[256]{
+        alignas(64) uint8_t token_charset[256]{
             // low 4 bits map of supported ASCII characters
             0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
             0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -60,6 +55,24 @@ namespace Dhttp
             0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0};
+
+        static constexpr u8_t tchar_map[]{
+            "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+            "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+            "\x00\x80\x00\x80\x80\x80\x80\x00\x00\x00\x80\x00\x80\x80\x80\x00"
+            "\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x00\x00\x00\x00\x00\x00"
+            "\x00\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80"
+            "\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x00\x00\x00\x80\x80"
+            "\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80"
+            "\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x00\x80\x00\x80\x00"
+            "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+            "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+            "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+            "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+            "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+            "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+            "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+            "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"};
     }
 
 #if HAVE__AVX2__
@@ -527,5 +540,3 @@ namespace Dhttp
         return {_mm256_srli_epi8(lhs.lo, r), _mm256_srli_epi8(lhs.hi, r)};
     }
 };
-
-#endif

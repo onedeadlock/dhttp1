@@ -1,5 +1,5 @@
-#ifndef DHTTP_DEFINE_H
-#define DHTTP_DEFINE_H
+#pragma once
+
 #include <cstdint>
 #include <cstring>
 #include <array>
@@ -90,5 +90,3 @@ namespace Dhttp
     using umax_t = uint64_t;
 #endif
 }
-
-#endif // DHTTP_DEFINE_H
