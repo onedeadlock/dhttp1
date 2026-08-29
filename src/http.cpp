@@ -4,7 +4,7 @@
 #define isnot !=
 #define not(x) (!(x))
 
- namespace dhttp
+namespace Dhttp::Implementation
 {
     bool http_1 = true;
     bool done   = true;
@@ -63,7 +63,7 @@
         };
     };
 
-    class dhttp::http
+    class http
     {
     public:
         http() : req_type{_req_type::type::request}, version(99) {}
@@ -73,7 +73,6 @@
         req_state state;
         req_line reqline;
         int version;
-        // methods
         int   req_version(const uint8_t i);
         u16_t req_size(const u16_t (&req)[], const int i) const;
         bool  req_version_is_http_1(const void *ver_string);
@@ -85,46 +84,13 @@
    
     };
 
-    /////////////////////////////////////////////////////////////
-    // ASCII LETTERS (C > 64/96 AND C < 91/123)
-    /////////////////////////////////////////////////////////////
-    inline u64_t ascii_letters(const u64_t v)
-    {
-        static constexpr u64_t A = static_cast<u64_t>('\x7f' - '\x40') * 0x101010101010101ULL;
-        static constexpr u64_t Z = static_cast<u64_t>('\x7f' + '\x5b') * 0x101010101010101ULL;
-        return (Z - (v & 0x5f5f5f5f5f5f5f5fULL)) & (A + (v & 0x5f5f5f5f5f5f5f5fULL)) & (~v & 0x8080808080808080ULL); //  'a' & 0xdf -> 'A' and (v & 0xdf) & 0x7f -> v & (0xdf & 0x7f) -> v & 0x5f
-    }
-
-    //////////////////////////////////////////////////////
-    // ASCII NUMBERS (C > 47 AND C < 58)
-    //////////////////////////////////////////////////////
-    inline u64_t ascii_numbers(const u64_t v)
-    {
-        static constexpr u64_t _0 = static_cast<u64_t>('\x7f' - '\x2f') * 0x101010101010101ULL;
-        static constexpr u64_t _9 = static_cast<u64_t>('\x7f' + '\x3a') * 0x101010101010101ULL;
-        return (_9 - (v & 0x7f7f7f7f7f7f7f7fULL)) & (_0 + (v & 0x7f7f7f7f7f7f7f7fULL)) & (~v & 0x8080808080808080ULL);
-    }
-
-    inline u64_t ascii_hyphen(const u64_t v)
-    {
-        static constexpr u64_t hi = 0x0100010001000100ULL;
-        static constexpr u64_t lo = 0x0001000100010001ULL;
-        static constexpr u64_t h = static_cast<u64_t>('\x2d') * 0x101010101010101ULL;
-        return ~((v ^ h) | (((v ^ h) & 0x7f7f7f7f7f7f7f7fULL) + 0x7f7f7f7f7f7f7f7fULL)) & 0x8080808080808080ULL;
-    }
-
-    inline u64_t ascii_fast_tchar(const u64_t v)
-    {
-        return ascii_letters(v) | ascii_numbers(v) | ascii_hyphen(v); // a-zA-z, -, 0-9
-    }
-
-    inline u64_t valid_tchar(dhttp::simd &v)
+    inline u64_t valid_tchar(simd &v)
     {
         if constexpr (HAVE_SHUFFLE__)
         {
-            static const dhttp::simd lo{dhttp::tables::token_charset_bitmap};
-            static const dhttp::simd hi{dhttp::tables::token_charset_bitmap + 64};
-            return dhttp::simd::movemask(dhttp::simd::shufb(lo, v) & dhttp::simd::shufb(hi, v >> 4));
+            static const simd lo{Tables::token_charset_bitmap};
+            static const simd hi{Tables::token_charset_bitmap + 64};
+            return simd::movemask(simd::shufb(lo, v) & simd::shufb(hi, v >> 4));
         }
         return 0;
     }
@@ -144,7 +110,7 @@
         if constexpr (OPTIMIZE_FOR_MOST_CASE)
         {
             // Most tokens are a-zA-Z0-9 and -; extra cost of full classification if the first check fails
-            return not(~ascii_fast_tchar(*reinterpret_cast<const u64_t *>(b)) & mask and ~req_valid_tchar(reinterpret_cast<const u8_t *>(b)) & mask);
+            return not(~Common::scalar::ascii_fast_tchar(*reinterpret_cast<const u64_t *>(b)) & mask and ~req_valid_tchar(reinterpret_cast<const u8_t *>(b)) & mask);
         }
         return not (~req_valid_tchar(reinterpret_cast<const u8_t *>(b)) & mask);
     }
@@ -257,7 +223,7 @@
         mask &= tzmask(crlf), crlf &= mask, lf &= mask, cr &= mask;
         state.pos = reqline.req_line[state.j + 1] + 2; // +2 for cr and lf
         state.req_line = done;
-        return -((state.j isnot 0) or (req_version_tag(reqline.req_line, in, _req_type::index[req_type]) isnot dhttp::http_1));
+        return -((state.j isnot 0) or (req_version_tag(reqline.req_line, in, _req_type::index[req_type]) isnot Implementation::http_1));
     }
 
     template <typename T = u16_t, std::size_t out_size>
@@ -265,7 +231,7 @@
     {
         auto &header = out[state.j];
 
-        if (state.pending_value and not )
+        if (state.pending_value)
         {
             if (not crlf)
                 return (header.value.len += 64, req_header_value(v, lf, cr, crlf));
@@ -362,6 +328,6 @@
             // increment cursor
             state.pos += 64;
         }
-        return dhttp::EXPECT_DATA;
+        return Dhttp::EXPECT_DATA;
     }
 }

@@ -1,98 +1,31 @@
 #ifndef DHTTP_H
 #define DHTTP_H
-#include <cstdint>
-#include <cstring>
-#include <cstddef>
-#include <array>
-#include <type_traits>
-
-#if defined(__AVX2__) || defined(__SSSE3__) || defined(__SSE4_2__) || defined(__SSE2__)
-#    if defined(__AVX2__)
-#        define HAVE__AVX2__   1
-#    elif defined(__SSE2__)
-#        define HAVE__SSE2__   1
-#    elif defined(__SSSE3__)
-#        define HAVE__SSSE3__  1
-#    elif defined (__SSE4_2__)
-#        define HAVE__SSE4_2__ 1
-#    endif
-#    include <immintrin.h>
-#elif defined(_ARM_NEON)
-#    if defined(__arm__) || (defined(__ARM_ARCH) && __ARM_ARCH == 1)
-#       include <arm_neon.h>
-#    else
-#       include <arm_acle.h>
-#    endif
-#    define HAVE__ARM_NEON__ 1
-#elif defined(UINT128_MAX) || defined(__INT128__)
-#    define HAVE__INT128__ 1
-#endif
-
-#define HAVE_SHUFFLE__ 0 // set if we have ssse3
-
-////////////////////////////////////////////////////////
-///////////////////// PERFORMANCE //////////////////////
-////////////////////////////////////////////////////////
-#ifndef OPTIMIZE_FOR_MOST_CASE
-#    define OPTIMIZE_FOR_MOST_CASE 1
-#endif
-#ifndef SUPPORT_FULL_TCHAR
-#    define SUPPORT_FULL_TCHAR 0
-#endif
-////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////
-
-#if defined(__GNUC__) || defined(__clang__)
-#    define likely(x)   (__builtin_expect(!!(x), 1))
-#    define unlikely(x) (__builtin_expect(!!(x), 0))
-#elif defined(__cplusplus) && __cplusplus >= 202002L
-#define likely(x)   (x) [[likely]]
-#define unlikely(x) (x) [[unlikely]]
-#else
-#    define likely(x)   (x)
-#    define unlikely(x) (x)
-#endif
-
-#if defined(__GNUC__) || defined(__clang__)
-#    define inline      [[gnu::always_inline]] inline
-#elif defined(MSC_VER)
-#    define inline __forceinline
-#else
-#    define inline inline
-#endif
-
-
-#define U32(x)  static_cast<const u32_t>(x)
-#define U64(x)  static_cast<const u64_t>(x)
-#define U128(x) static_cast<const u128_t>(x)
+#include "include/definiton.hpp"
+#include "common/common.hpp"
 
 #define lsb(x)   ((x) & -(x))        // isolate lsb
 #define trim(x)  ((x) & ~((x) << 1)) // set only lsb of every bit run, that is, given 0b100111100001, return 0b100000100001
 #define trimu(x) ((x) & ~((x) >> 1))
 
-namespace dhttp
+namespace Dhttp
 {
     template <typename base> struct simd64;
     class http;
-
-    #if HAVE__INT128__
-    using u128_t = std::uint128_t;
-    #endif
-    using u64_t = std::uint64_t;
-    using u32_t = std::uint32_t;
-    using u16_t = std::uint16_t;
-    using u8_t  = std::uint8_t;
+    class Implemation;
 
     constexpr int COMPLETE = 0;
     constexpr int EXPECT_DATA = 1;
 
     struct req_line
     {
-        /// N     req     res
-        // [3] = method/version
-        // [2] = uri/status
-        // [1] = version/msg
-        // [0] = start index
+        /*
+            N     req    |   res
+            _____________|________
+            [3] = method | version
+            [2] = uri    | status
+            [1] = version| msg
+            [0] = NULL   | NULL
+        */
         u16_t req_line[4];
     };
 
@@ -109,7 +42,7 @@ namespace dhttp
     };
 
 
-    namespace tables
+    namespace Tables
     {
         /* High/low bitmap of ascii: !, #, \$, %, &, ', *, +, -, .,
                                           ^, _, `, |, A-Za-z0-9, :, /, ?, #,
@@ -131,7 +64,7 @@ namespace dhttp
 
 #if HAVE__AVX2__
 #   define HAVE_SHUFFLE__ 1
-#   error "TODO implement cmpgt1, cmpeq0, cmpeq2"
+#   error "TODO implement cmpgt1, cmpeq0, cmpeq2 in common.hpp"
 #elif HAVE__SSE2__
     ///////////////////////////
     ///////////////////////////
