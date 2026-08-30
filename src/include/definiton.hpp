@@ -4,6 +4,7 @@
 #include <cstring>
 #include <array>
 #include <type_traits>
+#include <cassert>
 
 #if defined(__AVX2__) || defined(__SSSE3__) || defined(__SSE4_2__) || defined(__SSE2__)
 #    if defined(__AVX2__)
@@ -77,7 +78,7 @@
 //////////////////////////////
 //////////// DHTTP ///////////
 //////////////////////////////
-namespace Dhttp
+namespace dhttp
 {
     using u8_t  = std::uint8_t;
     using u16_t = std::uint16_t;

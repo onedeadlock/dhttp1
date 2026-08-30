@@ -4,48 +4,10 @@
 #define isnot !=
 #define not(x) (!(x))
 
-namespace Dhttp
+namespace dhttp
 {
     bool http_1 = true;
     bool done   = true;
-
-    template <typename T, size_t N>
-    struct req
-    {
-        static_assert(std::is_integral_v<T> && N > 0);
-        static constexpr u64_t __size = N;
-        u64_t __used = 0;
-
-        using struct
-        {
-            T len, pos;
-        } __pair;
-
-        struct {
-            __pair name, value;
-        } pair [N];
-
-        u64_t size(void)
-        {
-            return __size;
-        }
-
-        u64_t used(void)
-        {
-            return __used;
-        }
-
-        u64_t set_used(T i)
-        {
-            assert( i < __size);
-            return __used = i;
-        }
-
-        decltype(auto) &&operator[](T i)
-        {
-            return pair[i];
-        }
-    };
 
     struct _req_type
     {

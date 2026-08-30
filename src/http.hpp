@@ -3,13 +3,57 @@
 #include "common/common.hpp"
 #include "common/bits.hpp"
 
-namespace Dhttp
+namespace dhttp
 {
     template <typename base> struct simd64;
     class http;
 
     constexpr int COMPLETE = 0;
     constexpr int EXPECT_DATA = 1;
+
+    template <typename T, size_t N>
+    struct req
+    {
+        static_assert(std::is_integral_v<T> && N > 0);
+        static constexpr u64_t __size = N;
+        u64_t __used = 0;
+
+        using __pair = struct
+        {
+            T len, pos;
+        };
+
+        struct {
+            __pair name, value;
+        } pair [N];
+
+        constexpr u64_t size(void) noexcept
+        {
+            return __size;
+        }
+
+        u64_t used(void) const noexcept
+        {
+            return __used;
+        }
+
+        u64_t set_used(T i) noexcept
+        {
+            assert( i < __size );
+            return __used = i;
+        }
+
+        auto &&get(T i) const noexcept
+        {
+            assert( i < __size );
+            return pair[i];
+        }
+
+        auto &&operator[](T i) noexcept
+        {
+            return pair[i];
+        }
+    };
 
     struct req_line
     {
@@ -473,13 +517,13 @@ namespace Dhttp
 
          static simd64 sign(const simd64& u)
         {
-            std::assert(0, "implement me"); // TODO
+            assert(( "implement me", 0 )); // TODO
             return {0, 0};
         }
 
         static simd64 andnot(const simd64& u, simd64_t &v)
         {
-            std::assert(0, "implement me"); // TODO
+            assert(( "implement me", 0 )); // TODO
             return {0, 0};
         }
 

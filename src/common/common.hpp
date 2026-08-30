@@ -2,7 +2,7 @@
 
 #include "../include/definiton.hpp"
 
-namespace Dhttp::common::constant
+namespace dhttp::common::constant
 {
     static constexpr std::size_t intmaxWidth = sizeof (umax_t);
 
@@ -21,9 +21,21 @@ namespace Dhttp::common::constant
     constexpr u64_t AZ_const = max_c7f & 0xdfdfdfdfdfdfdfdfULL;
     constexpr u64_t A = UMAX('\x7f' - '\x40') * max_c01;
     constexpr u64_t Z = UMAX('\x7f' + '\x5b') * max_c01;
+
+    constexpr u64_t DeBruijn64_const = 0x03f79d71b4cb0a89ULL;
+
+    static constexpr u8_t DeBruijn64_seq[64]{
+        0,  47, 1,  56, 48, 27, 2,  60,
+        57, 49, 41, 37, 28, 16, 3,  61,
+        54, 58, 35, 52, 50, 42, 21, 44,
+        38, 32, 29, 23, 17, 11, 4,  62,
+        46, 55, 26, 59, 40, 36, 15, 53,
+        34, 51, 20, 43, 31, 22, 10, 45,
+        25, 39, 14, 33, 19, 30, 9,  24,
+        13, 18, 8,  12, 7,  6,  5,  63};
 }
 
-namespace Dhttp::common::scalar
+namespace dhttp::common::scalar
 {
     inline constexpr umax_t _dup(u8_t v)
     {
