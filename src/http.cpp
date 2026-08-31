@@ -10,34 +10,53 @@ namespace dhttp::Implementation
     
     bool http_1 = true;
     bool done   = true;
+    void pass   = [](void){ (void)0; };
 
-    inline u64_t valid_tchar(simd &v)
+    inline u8_t is_whitespace(u8_t x)
     {
-        if constexpr (HAVE_SHUFFLE__)
-        {
-            static const simd lo{tables::token_charset};
-            static const simd hi{tables::token_charset + 64};
-            return simd::movemask(simd::shufb(lo, v) & simd::shufb(hi, v >> 4));
-        }
-        return 0;
+        return not ((x ^ '\x20') & (x ^ '\x09')); // only for space and horizontal tab
+    };
+
+    inline std::size_t _rcount_whitespace(void *b, std::size_t len)
+    {
+        std::size_t i = 0;
+        while (i < len and is_whitespace(reinterpret_cast<u8_t *>(v)[i++]))
+            pass();
+        return i;
     }
-
-    inline bool trim_whitespace(void *b, u64_t len)
+    
+    inline std::size_t rcount_whitespace(void *b, std::size_t len)
     {
-        auto is_wsp = [&](umax_t v){ return (v ^ constant::max_c20) | (v ^ constant::max_c09); };
-
+        if constexpr (OPTIMIZE_FOR_MOST_CASE)
+            return _rcount_whitespace(b, len);
+ 
         umax_t *v = reinterpret_cast<umax_t *>(b);
-        std::size_t i  = len >> constant::max_int_p;
+        std::size_t i = len >> constant::max_int_p, j = 0;
+        for (; j < i and scalar::_cmpeq(v[j], constant::max_c20, constant::max_c09); j++)
+            pass();
+        if (std::size_t r = len & (constant::max_int_size - 1); r and not j)
+            return i + _rcount_whitespace(v + len, r);
+        return j;
+     }
 
-        // TODO
-        for (std::size_t j = 0; j < i and scalar::_cmpeq(v[j], constant::max_c20, constant::max_c09); j++)
-            ;
-        for (std::size_t j = i; j and scalar::_cmpeq(v[j], constant::max_c20, constant::max_c09); j--)
-            ;
-        std::size_t r = len & (constant::max_int_size - 1);
-        return false;
+    inline std::size_t lcount_whitespace(void *b, std::size_t len)
+    {
+        std::size_t i = len;
+        while (i and is_whitespace(reinterpret_cast<u8_t *>(v)[--i]))
+            pass();
+        return len - i;
     }
 
+    inline bool trim_whitespace(void *b, u64_t &t_len, u64_t &l_len)
+    {
+        void *v = reinterpret_cast<u8_t *>(b) + t_len;
+        if (std::size_t tsp_len = rcount_whitespace(v, 0); tsp_len == l_len)
+            return false;
+        t_len += tsp_len;
+        l_len -= lcount_whitespace(v, l_len);
+        return true;
+    };
+        
     inline u64_t req_valid_tchar(const u8_t *b)
     {
         if constexpr (SUPPORT_FULL_TCHAR)
