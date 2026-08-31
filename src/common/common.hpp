@@ -87,7 +87,7 @@ namespace dhttp::common::scalar
 
         constexpr umax_t a = _dup(0x7f - A);
         constexpr umax_t b = _dup(0x7f + B);
-        return (a - (v & constant::max_c7f)) & (b + (v & constant::max_c7f)) & (~v & constant::max_c80);
+        return (b - (v & constant::max_c7f)) & (a + (v & constant::max_c7f)) & (~v & constant::max_c80);
     }
 
     inline umax_t ascii_letters(umax_t v)
