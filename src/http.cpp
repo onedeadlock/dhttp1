@@ -89,7 +89,7 @@ namespace dhttp::Implementation
 
     inline int http::req_version(const u8_t i)
     {
-        return (version = i ^ '\x30') < 10;
+        return (this->version = i ^ '\x30') < 10;
     }
 
     inline bool http::req_version_is_http_1(const void *ver_string)
