@@ -4,50 +4,12 @@
 #define isnot !=
 #define not(x) (!(x))
 
-namespace dhttp
+namespace dhttp::Implementation
 {
+    using namespace common;
+    
     bool http_1 = true;
     bool done   = true;
-
-    struct _req_type
-    {
-        using req_index = const int (&)[];
-        enum type : int {
-            request  = 0,
-            response = 1,
-        };
-
-        static constexpr int index[2][3] = {
-            ////////////////////////////////////////////////////
-            //// REQUEST {req_method, req_uri, req_version} ////
-            ////////////////////////////////////////////////////
-            {1, 2, 3},
-            ////////////////////////////////////////////////////
-            //// RESPONSE {req_version, req_stat, req_msg} /////
-            ////////////////////////////////////////////////////
-            {3, 2, 1},
-        };
-    };
-
-    class http
-    {
-    public:
-        http() : req_type{_req_type::type::request}, version(99) {}
-
-    private:
-        _req_type::type req_type;
-        req_state state;
-        req_line reqline;
-        int version;
-        int   req_version(const uint8_t i);
-        u16_t req_size(const u16_t (&req)[], const int i) const;
-        bool  req_version_is_http_1(const void *ver_string);
-        bool  req_version_tag(const u16_t (&req)[], const void *buf, const _req_type::req_index& i);
-        template <typename T = u16_t, std::size_t out_size> int parse(void *in, size_t in_size, req<T, out_size> &out);
-        int parse_request_line(const void *in, const std::size_t size, const simd &v, u64_t &lf, u64_t &cr, u64_t &crlf);
-        template <typename T = u16_t, std::size_t out_size>
-        int parse_header(void *in, size_t in_size, req<T, out_size> &out, const simd &v, u64_t &lf, u64_t &cr, u64_t &crlf);
-    };
 
     inline u64_t valid_tchar(simd &v)
     {
@@ -75,7 +37,7 @@ namespace dhttp
         if constexpr (OPTIMIZE_FOR_MOST_CASE)
         {
             // Most tokens are a-zA-Z0-9 and -; extra cost of full classification if the first check fails
-            return not(~common::scalar::ascii_fast_tchar(*reinterpret_cast<const u64_t *>(b)) & mask and ~req_valid_tchar(reinterpret_cast<const u8_t *>(b)) & mask);
+            return not(~scalar::ascii_fast_tchar(*reinterpret_cast<const u64_t *>(b)) & mask and ~req_valid_tchar(reinterpret_cast<const u8_t *>(b)) & mask);
         }
         return not (~req_valid_tchar(reinterpret_cast<const u8_t *>(b)) & mask);
     }
@@ -146,7 +108,7 @@ namespace dhttp
         static const simd sp{'\x20'}, htab{'\x9'};
         simd z = simd::cmpglt(v, '\x19', '\x7f') | simd::sign(v);
         // mask   = simd::movemask(simd::andnot(z, simd::cmpeq(v, sp) | simd::cmpeq(v, htab)));
-        return not simd::testzero(z | htab) and ((cr & common::constant::msb_64 | lf) and crlf);
+        return not simd::testzero(z | htab) and ((cr & constant::msb_64 | lf) and crlf);
     }
 
     int http::parse_request_line(const void *in, const std::size_t size, const simd &v, u64_t &lf, u64_t &cr, u64_t &crlf)
@@ -155,11 +117,11 @@ namespace dhttp
         static const simd vhtab{'\x9' };
 
         const u64_t sp        = simd::movemask(simd::cmpeq2(v, vsp, vhtab));
-        const u64_t valid_sp  = ~static_cast<const u64_t>(state.trailing_sp) & common::bits::trim(sp);
+        const u64_t valid_sp  = ~static_cast<const u64_t>(state.trailing_sp) & bits::trim(sp);
         const u64_t tchar     = simd::movemask(simd::cmpglt(v, '\x20', '\x7f')) | valid_sp;
 
         auto has_any_rejected_token = [&](void)
-        { return (~tchar | lf | (cr & ~common::constant::msb_64)) & common::bits::tzmask(crlf); };
+        { return (~tchar | lf | (cr & ~constant::msb_64)) & bits::tzmask(crlf); };
 
         if unlikely ((crlf & 0x02) and state.no_init)
             return  ((crlf & crlf >> 2) & 0x04) ? -400 /* empty request */ : -400 /* blank line */;
@@ -176,16 +138,16 @@ namespace dhttp
         }
 
         u64_t mask = sp | cr | lf;
-        for (u64_t umask = mask & common::bits::blsmask(cr | lf); umask and state.j; umask &= umask - 1)
-            reqline.req_line[state.j--] = state.pos + common::bits::tzcnt(umask);
+        for (u64_t umask = mask & bits::blsmask(cr | lf); umask and state.j; umask &= umask - 1)
+            reqline.req_line[state.j--] = state.pos + bits::tzcnt(umask);
 
         if not (not crlf)
         {
-            state.trailing_cr = static_cast<bool>(cr & common::constant::msb_64);
-            state.trailing_sp = static_cast<bool>(sp & common::constant::msb_64);
+            state.trailing_cr = static_cast<bool>(cr & constant::msb_64);
+            state.trailing_sp = static_cast<bool>(sp & constant::msb_64);
             return 0;
         }
-        mask &= common::bits::tzmask(crlf), crlf &= mask, lf &= mask, cr &= mask;
+        mask &= bits::tzmask(crlf), crlf &= mask, lf &= mask, cr &= mask;
         state.pos = reqline.req_line[state.j + 1] + 2; // +2 for cr and lf
         state.req_line = done;
         return -((state.j isnot 0) or (req_version_tag(reqline.req_line, in, _req_type::index[req_type]) isnot http_1));
@@ -208,7 +170,7 @@ namespace dhttp
         if unlikely (state.pending_name)
         {
             // names are mostly short
-            if unlikely (crlf and (not col or common::bits::lsb(crlf) < common::bits::lsb(col)))
+            if unlikely (crlf and (not col or bits::lsb(crlf) < bits::lsb(col)))
                 return -400;
             if not (col)
                 return (header.name.len += 64, 0);
@@ -222,9 +184,9 @@ namespace dhttp
             
             while (col)
             {
-                const u64_t first_col = common::bits::lsb(col);
-                const u64_t pre_col   = common::bits::xlsfill(first_col);
-                const u64_t eol       = common::bits::lsb(crlf & pre_col); // next crlf after first colon
+                const u64_t first_col = bits::lsb(col);
+                const u64_t pre_col   = bits::xlsfill(first_col);
+                const u64_t eol       = bits::lsb(crlf & pre_col); // next crlf after first colon
                 auto &header = out[state.j];
 
                 if unlikely (eol and eol < first_col)
@@ -233,20 +195,20 @@ namespace dhttp
                 //////////////// HEADER NAME ////////////////
                 if likely (not state.pending_name)
                     header.name.pos = state.pos;
-                header.name.len += common::bits::tzcnt(first_col) - 1;
+                header.name.len += bits::tzcnt(first_col) - 1;
                 if unlikely (not req_header_name(static_cast<const u8_t *>(in) + header.name.pos, header.name.len))
                     return -400;
 
                 //////////////// HEADER VALUE /////////////////
                 mask &= pre_col;
-                header.value.pos = common::bits::tzcnt(mask);
+                header.value.pos = bits::tzcnt(mask);
                 if not (eol)
                 {
                     header.value.len = 63 - header.value.len;
                     state.pending_name = true;
                     return 0;
                 }
-                header.value.len = common::bits::tzcnt(common::bits::trim_u(mask)) - header.name.len;
+                header.value.len = bits::tzcnt(bits::trim_u(mask)) - header.name.len;
 
                 col &= pre_col;
                 crlf &= crlf - 1;
@@ -254,7 +216,7 @@ namespace dhttp
             }
         }
         state.pending_name = crlf and not col;
-        state.trailing_cr  = static_cast<bool>(cr & common::constant::msb_64);
+        state.trailing_cr  = static_cast<bool>(cr & constant::msb_64);
         return 0;
     }
 

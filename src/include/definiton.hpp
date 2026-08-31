@@ -80,6 +80,8 @@
 //////////////////////////////
 namespace dhttp
 {
+    template <typename base> struct simd64;
+    
     using u8_t  = std::uint8_t;
     using u16_t = std::uint16_t;
     using u32_t = std::uint32_t;
