@@ -22,7 +22,7 @@ namespace dhttp::Implementation
         return 0;
     }
 
-    inline u64_t req_valid_tchar(const uint8_t *b)
+    inline u64_t req_valid_tchar(const u8_t *b)
     {
         if constexpr (SUPPORT_FULL_TCHAR)
             return U64(tables::tchar_map[b[0]]) << 0U | U64(tables::tchar_map[b[1]]) << 8U |
@@ -42,12 +42,12 @@ namespace dhttp::Implementation
         return not (~req_valid_tchar(reinterpret_cast<const u8_t *>(b)) & mask);
     }
 
-    inline bool req_single_tchar(const uint8_t b)
+    inline bool req_single_tchar(const u8_t b)
     {
         return tables::tchar_map[b];
     }
 
-    inline bool req_header_name(const uint8_t *buf, const uint16_t len)
+    inline bool req_header_name(const u8_t *buf, const u16_t len)
     {
         bool valid = true;
         const u16_t e = len >> 3;
@@ -56,7 +56,10 @@ namespace dhttp::Implementation
         for (u16_t j = 0; j < e and valid; j++)
             valid = req_tchar(reinterpret_cast<const u64_t *>(buf) + j, ~0ULL);
         if likely (valid and r)
-            return r == 1 ? req_single_tchar(*(buf + e)) : req_tchar(reinterpret_cast<const u64_t *>(buf) + e, (1U << (r << 3)) - 1); // only check 'r' bytes
+        {
+            u64_t r_mask = (1U << (r << 3)) - 1;
+            return r == 1 ? req_single_tchar(*(buf + e)) : req_tchar(reinterpret_cast<const u64_t *>(buf) + e, r_mask);
+        }
         return valid;
     }
 
@@ -68,7 +71,7 @@ namespace dhttp::Implementation
     /////////////////////////////////////////////
     /////////////////////////////////////////////
 
-    inline int http::req_version(const uint8_t i)
+    inline int http::req_version(const u8_t i)
     {
         return (version = i ^ '\x30') < 10;
     }
@@ -77,13 +80,13 @@ namespace dhttp::Implementation
     {
         static constexpr u64_t mask = U64('\x48') | U64('\x54') << 8 | U64('\x54') << 16 | U64('\x50') << 24 |
                                       U64('\x2f') << 32 | U64('\x2e') << 40 | U64('\x31') << 48; // H  T  T  P  /  1  .
-        return mask == *reinterpret_cast<const u64_t *>(ver_string) & 0x00ffffffffffffff and req_version(reinterpret_cast<const uint8_t *>(ver_string)[7]);
+        return mask == *reinterpret_cast<const u64_t *>(ver_string) & 0x00ffffffffffffff and req_version(reinterpret_cast<const u8_t *>(ver_string)[7]);
     }
 
     inline u16_t http::req_size(const u16_t (&req)[], const int i) const
     {
-        return -http::req_type is _req_type::type::request ? (req[i - 0] - req[i + 1]) - 1
-                                                           : (req[i - 1] - req[i - 0]) - 1; // -1 for the sp seperator
+        return http::req_type is _req_type::type::request ? (req[i - 0] - req[i + 1]) - 1
+                                                          : (req[i - 1] - req[i - 0]) - 1; // -1 for the sp seperator
     }
 
     inline bool http::req_version_tag(const u16_t (&req)[], const void *in, const _req_type::req_index &i)
@@ -145,7 +148,7 @@ namespace dhttp::Implementation
         {
             state.trailing_cr = static_cast<bool>(cr & constant::msb_64);
             state.trailing_sp = static_cast<bool>(sp & constant::msb_64);
-            return 0;
+            return state.pos += 64, 0;
         }
         mask &= bits::tzmask(crlf), crlf &= mask, lf &= mask, cr &= mask;
         state.pos = reqline.req_line[state.j + 1] + 2; // +2 for cr and lf
@@ -161,9 +164,19 @@ namespace dhttp::Implementation
         if (state.pending_value)
         {
             if (not crlf)
-                return (header.value.len += 64, req_header_value(v, lf, cr, crlf));
-            // TODO
+            {
+                header.value.len += 64, state.pos += 64;
+                return req_header_value(v, lf, cr, crlf);
+            }
+            header.value.len += bits::tzcnt(crlf);
+            ////  trim whitepace
+            bool all_wsp = false;
+            if unlikely (all_wsp or req_header_value(v, lf, cr, crlf) < 0)
+                return -400;
+            state.j += 1;
+            crlf &= crlf - 1;
         }
+
         static const simd v_col{'\x3a'};
         u64_t col = simd::movemask(simd::cmpeq(v, v_col));
 
@@ -173,7 +186,7 @@ namespace dhttp::Implementation
             if unlikely (crlf and (not col or bits::lsb(crlf) < bits::lsb(col)))
                 return -400;
             if not (col)
-                return (header.name.len += 64, 0);
+                return header.name.len += 64, 0;
         }
 
         if (col)
@@ -187,19 +200,23 @@ namespace dhttp::Implementation
                 const u64_t first_col = bits::lsb(col);
                 const u64_t pre_col   = bits::xlsfill(first_col);
                 const u64_t eol       = bits::lsb(crlf & pre_col); // next crlf after first colon
-                auto &header = out[state.j];
 
                 if unlikely (eol and eol < first_col)
                     return -400;
 
-                //////////////// HEADER NAME ////////////////
+                //////////////// HEADER ////////////////
+                 auto &header = out[state.j];
+                //// NAME
                 if likely (not state.pending_name)
+                {
+                    header.name.len = 0;
                     header.name.pos = state.pos;
+                }
                 header.name.len += bits::tzcnt(first_col) - 1;
                 if unlikely (not req_header_name(static_cast<const u8_t *>(in) + header.name.pos, header.name.len))
                     return -400;
 
-                //////////////// HEADER VALUE /////////////////
+                //// VALUE
                 mask &= pre_col;
                 header.value.pos = bits::tzcnt(mask);
                 if not (eol)
@@ -210,7 +227,7 @@ namespace dhttp::Implementation
                 }
                 header.value.len = bits::tzcnt(bits::trim_u(mask)) - header.name.len;
 
-                col &= pre_col;
+                col  &= pre_col;
                 crlf &= crlf - 1;
                 state.j += 1;
             }
@@ -245,16 +262,13 @@ namespace dhttp::Implementation
                 return -400;
             
             if unlikely (crlf & crlf >> 2)
-                return j + tzcnt(crlf & crlf >> 2);
+                return j + bits::tzcnt(crlf & crlf >> 2);
             
             // handle any crlf carry
             if unlikely ((lf | cr) & 0xe000000000000000ull)
                 if (('\xd' is b[-3]) && ('\xa' is b[-2]) && ('\xd' is b[-1]) && ('\xa' is b[0]))
                     return j + 4;
-            
-            // increment cursor
-            state.pos += 64;
         }
-        return Dhttp::EXPECT_DATA;
+        return dhttp::EXPECT_DATA;
     }
 }
