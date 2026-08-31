@@ -30,13 +30,13 @@ namespace dhttp::Implementation
         if constexpr (OPTIMIZE_FOR_MOST_CASE)
             return _rcount_whitespace(b, len);
  
-        umax_t *v = reinterpret_cast<umax_t *>(b);
-        std::size_t i = len >> constant::max_int_p, j = 0;
-        for (; j < i and scalar::_cmpeq(v[j], constant::max_c20, constant::max_c09); j++)
+        umax_t *v = reinterpret_cast<umax_t *>(b), mask;
+        std::size_t i = len >> constant::max_int_size_p, j = 0;
+        for (; j < i and (mask = scalar::_cmpeq(v[j], constant::max_c20, constant::max_c09)); j++)
             pass();
-        if (std::size_t r = len & (constant::max_int_size - 1); r and not j)
+        if (std::size_t r = len & (constant::max_int_size - 1); r and j == i)
             return i + _rcount_whitespace(v + len, r);
-        return j;
+        return (j << constant::max_int_size_p) + bits::tzcnt(mask);
      }
 
     inline std::size_t lcount_whitespace(void *b, std::size_t len)
