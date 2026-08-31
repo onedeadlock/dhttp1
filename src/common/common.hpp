@@ -4,21 +4,27 @@
 
 namespace dhttp::common::constant
 {
-    static constexpr std::size_t intmaxWidth = sizeof (umax_t);
+    static constexpr std::size_t max_int_size = sizeof (umax_t);
+    static constexpr std::size_t max_int_p    = (max_int_size >> 1) - 1;
 
     constexpr umax_t c7f = 0x7f7f7f7f7f7f7f7fULL;
     constexpr umax_t c80 = 0x8080808080808080ULL;
     constexpr umax_t c01 = 0x0101010101010101ULL;
     constexpr umax_t c20 = 0x2020202020202020ULL;
+    constexpr umax_t c09 = 0x0909090909090909ULL;
+    constexpr umax_t cdf = 0xdfdfdfdfdfdfdfdfULL;
+    
     constexpr umax_t msb_64  = 0x8000000000000000ULL;
     constexpr umax_t max_c7f = UMAX_C(c7f) << 64 | c7f;
     constexpr umax_t max_c80 = UMAX_C(c80) << 64 | c80;
     constexpr umax_t max_c01 = UMAX_C(c01) << 64 | c01;
     constexpr umax_t max_c20 = UMAX_C(c20) << 64 | c20;
+    constexpr umax_t max_c09 = UMAX_C(c09) << 64 | c09;
+    constexpr umax_t max_cdf = UMAX_C(cdf) << 64 | cdf;
 
     constexpr u64_t  hyphen = UMAX('\x2d') * max_c01;
     
-    constexpr u64_t AZ_const = max_c7f & 0xdfdfdfdfdfdfdfdfULL;
+    constexpr u64_t AZ_const = max_c7f & max_cdf;
     constexpr u64_t A = UMAX('\x7f' - '\x40') * max_c01;
     constexpr u64_t Z = UMAX('\x7f' + '\x5b') * max_c01;
 
@@ -45,6 +51,11 @@ namespace dhttp::common::scalar
     inline umax_t _cmpeqz(umax_t v)
     {
         return ~(v | ((v & constant::max_c7f) + constant::max_c7f)) & constant::max_c80;
+    }
+
+     inline umax_t _cmpeqz_(umax_t v)
+    {
+        return ((v & constant::max_c7f) - constant::max_c01) & ~v & constant::max_c80;
     }
 
     inline umax_t _cmpeq(umax_t u, umax_t v)

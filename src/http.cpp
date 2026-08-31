@@ -22,10 +22,22 @@ namespace dhttp::Implementation
         return 0;
     }
 
-    inline bool trim_whitespace(const u8_t *b, u64_t len)
+    inline bool trim_whitespace(void *b, u64_t len)
     {
-        
+        auto is_wsp = [&](umax_t v){ return (v ^ constant::max_c20) | (v ^ constant::max_c09); };
+
+        umax_t *v = reinterpret_cast<umax_t *>(b);
+        std::size_t i  = len >> constant::max_int_p;
+
+        // TODO
+        for (std::size_t j = 0; j < i and scalar::_cmpeq(v[j], constant::max_c20, constant::max_c09); j++)
+            ;
+        for (std::size_t j = i; j and scalar::_cmpeq(v[j], constant::max_c20, constant::max_c09); j--)
+            ;
+        std::size_t r = len & (constant::max_int_size - 1);
+        return false;
     }
+
     inline u64_t req_valid_tchar(const u8_t *b)
     {
         if constexpr (SUPPORT_FULL_TCHAR)
@@ -189,7 +201,10 @@ namespace dhttp::Implementation
             if unlikely (crlf and (not col or bits::lsb(crlf) < bits::lsb(col)))
                 return -400;
             if not (col)
-                return header.name.len += 64, 0;
+            {
+                header.name.len += 64;
+                return 0;
+            }
         }
 
         if (col)
