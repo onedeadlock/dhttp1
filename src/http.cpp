@@ -22,6 +22,10 @@ namespace dhttp::Implementation
         return 0;
     }
 
+    inline bool trim_whitespace(const u8_t *b, u64_t len)
+    {
+        
+    }
     inline u64_t req_valid_tchar(const u8_t *b)
     {
         if constexpr (SUPPORT_FULL_TCHAR)
@@ -94,7 +98,6 @@ namespace dhttp::Implementation
         static constexpr u16_t req_version_required_size = 8; // len(HTTP/1.x)
         return (req_size(req, i[0]) == req_version_required_size) and req_version_is_http_1(in + req[i[0]]);
     }
-
 
     inline bool req_header_value(const simd &v, const u64_t lf, const u64_t cr, const u64_t crlf)
     {
