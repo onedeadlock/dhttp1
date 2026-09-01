@@ -10,7 +10,7 @@ namespace dhttp::Implementation
     
     bool http_1 = true;
     bool done   = true;
-    void pass   = [](void){ (void)0; };
+    void pass   = []{};
 
     inline u8_t is_whitespace(u8_t x)
     {
@@ -37,7 +37,7 @@ namespace dhttp::Implementation
     {
         void *v = reinterpret_cast<u8_t *>(b) + t_len;
         std::size_t tsp_len = rcount_whitespace(v, 0);
-        if unlikely (tsp_len != l_len)
+        if unlikely (tsp_len == l_len)
             return false;
         t_len += tsp_len;
         l_len -= lcount_whitespace(v, l_len);
@@ -57,10 +57,7 @@ namespace dhttp::Implementation
     inline bool req_tchar(const void *b, const u64_t mask)
     {
         if constexpr (OPTIMIZE_FOR_MOST_CASE)
-        {
-            // Most tokens are a-zA-Z0-9 and -; extra cost of full classification if the first check fails
-            return not(~scalar::ascii_fast_tchar(*reinterpret_cast<const u64_t *>(b)) & mask and ~req_valid_tchar(reinterpret_cast<const u8_t *>(b)) & mask);
-        }
+            return not(~scalar::ascii_fast_tchar(*reinterpret_cast<const u64_t *>(b)) & mask and ~req_valid_tchar(reinterpret_cast<const u8_t *>(b)) & mask); // Most tokens are a-zA-Z0-9 and -
         return not (~req_valid_tchar(reinterpret_cast<const u8_t *>(b)) & mask);
     }
 
@@ -142,8 +139,7 @@ namespace dhttp::Implementation
         const u64_t valid_sp  = ~static_cast<const u64_t>(state.trailing_sp) & bits::trim(sp);
         const u64_t tchar     = simd::movemask(simd::cmpglt(v, '\x20', '\x7f')) | valid_sp;
 
-        auto has_any_rejected_token = [&](void)
-        { return (~tchar | lf | (cr & ~constant::msb_64)) & bits::tzmask(crlf); };
+        auto has_any_rejected_token = []{ return (~tchar | lf | (cr & ~constant::msb_64)) & bits::tzmask(crlf); };
 
         if unlikely ((crlf & 0x02) and state.no_init)
             return  ((crlf & crlf >> 2) & 0x04) ? -400 /* empty request */ : -400 /* blank line */;
@@ -200,7 +196,6 @@ namespace dhttp::Implementation
         u64_t col = simd::movemask(simd::cmpeq(v, v_col));
         if unlikely (state.pending_name and not col)
             return not (header.name.len += 64);
-
         if (col)
         {
             u64_t mask = 0;
