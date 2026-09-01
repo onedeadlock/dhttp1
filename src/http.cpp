@@ -17,7 +17,7 @@ namespace dhttp::Implementation
         return (x == '\x20') or (x == '\x09'); // only for space and horizontal tab
     };
 
-    inline std::size_t _rcount_whitespace(void *b, std::size_t len)
+    inline std::size_t rcount_whitespace(void *b, std::size_t len)
     {
         std::size_t i = 0;
         while (i < len and is_whitespace(reinterpret_cast<u8_t *>(v)[i++]))
@@ -25,20 +25,6 @@ namespace dhttp::Implementation
         return i;
     }
     
-    inline std::size_t rcount_whitespace(void *b, std::size_t len)
-    {
-        if constexpr (OPTIMIZE_FOR_MOST_CASE)
-            return _rcount_whitespace(b, len);
- 
-        umax_t *v = reinterpret_cast<umax_t *>(b), mask;
-        std::size_t i = len >> constant::max_int_size_p, j = 0;
-        for (; j < i and (mask = scalar::_cmpeq(v[j], constant::max_c20, constant::max_c09)); j++)
-            pass();
-        if (std::size_t r = len & (constant::max_int_size - 1); r and j == i)
-            return i + _rcount_whitespace(v + len, r);
-        return (j << constant::max_int_size_p) + bits::tzcnt(mask);
-     }
-
     inline std::size_t lcount_whitespace(void *b, std::size_t len)
     {
         std::size_t i = len;
@@ -50,7 +36,7 @@ namespace dhttp::Implementation
     inline bool trim_whitespace(void *b, u64_t &t_len, u64_t &l_len)
     {
         void *v = reinterpret_cast<u8_t *>(b) + t_len;
-        if (std::size_t tsp_len = rcount_whitespace(v, 0); tsp_len == l_len)
+        if unlikely (std::size_t tsp_len = rcount_whitespace(v, 0); tsp_len == l_len)
             return false;
         t_len += tsp_len;
         l_len -= lcount_whitespace(v, l_len);
