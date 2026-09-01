@@ -54,7 +54,7 @@ namespace dhttp::Implementation
         return 0;
     }
 
-    inline bool req_tchar(const void *b, const u64_t mask)
+    inline bool req_tchar(const void *b, const umax_t mask)
     {
         if constexpr (OPTIMIZE_FOR_MOST_CASE)
             return not(~scalar::ascii_fast_tchar(*reinterpret_cast<const u64_t *>(b)) & mask and ~req_valid_tchar(reinterpret_cast<const u8_t *>(b)) & mask); // Most tokens are a-zA-Z0-9 and -
@@ -69,14 +69,14 @@ namespace dhttp::Implementation
     inline bool req_header_name(const u8_t *buf, const u16_t len)
     {
         bool valid = true;
-        const u16_t e = len >> 3;
-        const u64_t r = len & 7;
+        const u16_t e = len >> constant::max_int_size_p;
+        const u64_t r = len & (constant::max_int_size - 1);
 
         for (u16_t j = 0; j < e and valid; j++)
-            valid = req_tchar(reinterpret_cast<const u64_t *>(buf) + j, ~0ULL);
+            valid = req_tchar(reinterpret_cast<const u64_t *>(buf) + j, constant::max_cff);
         if not (valid and r)
             return valid;
-        u64_t r_mask = (1U << (r << 3)) - 1;
+        const u64_t r_mask = (1U << (r << constant::max_int_size_p)) - 1;
         return r == 1 ? req_single_tchar(*(buf + e)) : req_tchar(reinterpret_cast<const u64_t *>(buf) + e, r_mask);
     }
 
