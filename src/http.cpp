@@ -36,7 +36,8 @@ namespace dhttp::Implementation
     inline bool trim_whitespace(void *b, u64_t &t_len, u64_t &l_len)
     {
         void *v = reinterpret_cast<u8_t *>(b) + t_len;
-        if unlikely (std::size_t tsp_len = rcount_whitespace(v, 0); tsp_len == l_len)
+        std::size_t tsp_len = rcount_whitespace(v, 0);
+        if unlikely (tsp_len != l_len)
             return false;
         t_len += tsp_len;
         l_len -= lcount_whitespace(v, l_len);
@@ -76,12 +77,10 @@ namespace dhttp::Implementation
 
         for (u16_t j = 0; j < e and valid; j++)
             valid = req_tchar(reinterpret_cast<const u64_t *>(buf) + j, ~0ULL);
-        if likely (valid and r)
-        {
-            u64_t r_mask = (1U << (r << 3)) - 1;
-            return r == 1 ? req_single_tchar(*(buf + e)) : req_tchar(reinterpret_cast<const u64_t *>(buf) + e, r_mask);
-        }
-        return valid;
+        if not (valid and r)
+            return valid;
+        u64_t r_mask = (1U << (r << 3)) - 1;
+        return r == 1 ? req_single_tchar(*(buf + e)) : req_tchar(reinterpret_cast<const u64_t *>(buf) + e, r_mask);
     }
 
     /////////////////////////////////////////////
@@ -164,7 +163,7 @@ namespace dhttp::Implementation
         for (u64_t umask = mask & bits::blsmask(cr | lf); umask and state.j; umask &= umask - 1)
             reqline.req_line[state.j--] = state.pos + bits::tzcnt(umask);
 
-        if not (not crlf)
+        if not (crlf)
         {
             state.trailing_cr = static_cast<bool>(cr & constant::msb_64);
             state.trailing_sp = static_cast<bool>(sp & constant::msb_64);
@@ -190,27 +189,17 @@ namespace dhttp::Implementation
             }
             header.value.len += bits::tzcnt(crlf);
             ////  trim whitepace
-            bool all_wsp = false;
+            bool all_wsp = trim_whitespace(in, header.value.pos, header.value.len);
             if unlikely (all_wsp or req_header_value(v, lf, cr, crlf) < 0)
                 return -400;
             state.j += 1;
             crlf &= crlf - 1;
         }
 
-        static const simd v_col{'\x3a'};
+        static const simd v_col {'\x3a'};
         u64_t col = simd::movemask(simd::cmpeq(v, v_col));
-
-        if unlikely (state.pending_name)
-        {
-            // names are mostly short
-            if unlikely (crlf and (not col or bits::lsb(crlf) < bits::lsb(col)))
-                return -400;
-            if not (col)
-            {
-                header.name.len += 64;
-                return 0;
-            }
-        }
+        if unlikely (state.pending_name and not col)
+            return not (header.name.len += 64);
 
         if (col)
         {
@@ -224,7 +213,7 @@ namespace dhttp::Implementation
                 const u64_t pre_col   = bits::xlsfill(first_col);
                 const u64_t eol       = bits::lsb(crlf & pre_col); // next crlf after first colon
 
-                if unlikely (eol and eol < first_col)
+                if unlikely ((eol and eol < first_col) and not state.pending_name)
                     return -400;
 
                 //////////////// HEADER ////////////////
