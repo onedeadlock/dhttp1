@@ -14,7 +14,7 @@ namespace dhttp::Implementation
 
     inline u8_t is_whitespace(u8_t x)
     {
-        return not ((x ^ '\x20') & (x ^ '\x09')); // only for space and horizontal tab
+        return not ((x == '\x20') && (x == '\x09')); // only for space and horizontal tab
     };
 
     inline std::size_t _rcount_whitespace(void *b, std::size_t len)
