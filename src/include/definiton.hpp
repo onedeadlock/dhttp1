@@ -6,6 +6,10 @@
 #include <type_traits>
 #include <cassert>
 
+#define is ==
+#define isnot !=
+#define not(x) (!(x))
+
 #if defined(__AVX2__) || defined(__SSSE3__) || defined(__SSE4_2__) || defined(__SSE2__)
 #    if defined(__AVX2__)
 #        define HAVE__AVX2__   1

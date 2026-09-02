@@ -1,16 +1,12 @@
 #include "http.hpp"
 
-#define is ==
-#define isnot !=
-#define not(x) (!(x))
-
 namespace dhttp::Implementation
 {
     using namespace common;
     
     bool http_1 = true;
     bool done   = true;
-    void pass   = []{};
+    auto pass   = []{};
 
     inline u8_t is_whitespace(u8_t x)
     {
@@ -20,7 +16,7 @@ namespace dhttp::Implementation
     inline std::size_t rcount_whitespace(void *b, std::size_t len)
     {
         std::size_t i = 0;
-        while (i < len and is_whitespace(reinterpret_cast<u8_t *>(v)[i++]))
+        while (i < len and is_whitespace(reinterpret_cast<u8_t *>(b)[i++]))
             pass();
         return i;
     }
@@ -28,7 +24,7 @@ namespace dhttp::Implementation
     inline std::size_t lcount_whitespace(void *b, std::size_t len)
     {
         std::size_t i = len;
-        while (i and is_whitespace(reinterpret_cast<u8_t *>(v)[--i]))
+        while (i and is_whitespace(reinterpret_cast<u8_t *>(b)[--i]))
             pass();
         return len - i;
     }
@@ -38,10 +34,10 @@ namespace dhttp::Implementation
         void *v = reinterpret_cast<u8_t *>(b) + t_len;
         std::size_t tsp_len = rcount_whitespace(v, 0);
         if unlikely (tsp_len == l_len)
-            return false;
+            return 1;
         t_len += tsp_len;
         l_len -= lcount_whitespace(v, l_len);
-        return true;
+        return 0;
     };
         
     inline u64_t req_valid_tchar(const u8_t *b)
@@ -97,13 +93,13 @@ namespace dhttp::Implementation
     {
         static constexpr u64_t mask = U64('\x48') | U64('\x54') << 8 | U64('\x54') << 16 | U64('\x50') << 24 |
                                       U64('\x2f') << 32 | U64('\x2e') << 40 | U64('\x31') << 48; // H  T  T  P  /  1  .
-        return mask == *reinterpret_cast<const u64_t *>(ver_string) & 0x00ffffffffffffff and req_version(reinterpret_cast<const u8_t *>(ver_string)[7]);
+        return mask == (*reinterpret_cast<const u64_t *>(ver_string) & 0x00ffffffffffffff) and req_version(reinterpret_cast<const u8_t *>(ver_string)[7]);
     }
 
     inline u16_t http::req_size(const u16_t (&req)[], const int i) const
     {
-        return http::req_type is _req_type::type::request ? (req[i - 0] - req[i + 1]) - 1
-                                                          : (req[i - 1] - req[i - 0]) - 1; // -1 for the sp seperator
+        return this->req_type is _req_type::type::request ? (req[i - 0] - (req[i + 1]) - 1)
+                                                          : (req[i - 1] - (req[i - 0]) - 1); // -1 for the sp seperator
     }
 
     inline bool http::req_version_tag(const u16_t (&req)[], const void *in, const _req_type::req_index &i)
@@ -139,7 +135,7 @@ namespace dhttp::Implementation
         const u64_t valid_sp  = ~static_cast<const u64_t>(state.trailing_sp) & bits::trim(sp);
         const u64_t tchar     = simd::movemask(simd::cmpglt(v, '\x20', '\x7f')) | valid_sp;
 
-        auto has_any_rejected_token = []{ return (~tchar | lf | (cr & ~constant::msb_64)) & bits::tzmask(crlf); };
+        auto has_any_rejected_token = [&]{ return (~tchar | lf | (cr & ~constant::msb_64)) & bits::tzmask(crlf); };
 
         if unlikely ((crlf & 0x02) and state.no_init)
             return  ((crlf & crlf >> 2) & 0x04) ? -400 /* empty request */ : -400 /* blank line */;
@@ -183,13 +179,13 @@ namespace dhttp::Implementation
                 header.value.len += 64, state.pos += 64;
                 return req_header_value(v, lf, cr, crlf);
             }
-            header.value.len += bits::tzcnt(crlf);
-            ////  trim whitepace
-            bool all_wsp = trim_whitespace(in, header.value.pos, header.value.len);
-            if unlikely (all_wsp or req_header_value(v, lf, cr, crlf) < 0)
-                return -400;
             state.j += 1;
             crlf &= crlf - 1;
+            state.pending_value = false;
+            header.value.len += bits::tzcnt(crlf);
+            bool all_wsp = trim_whitespace(in, header.value.pos, header.value.len);
+             if unlikely (all_wsp or req_header_value(v, lf, cr, crlf) < 0)
+                return -400;
         }
 
         static const simd v_col {'\x3a'};

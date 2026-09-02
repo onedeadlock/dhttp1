@@ -65,4 +65,14 @@ namespace dhttp::common::bits
             return constant::DeBruijn64_seq[(x * constant::DeBruijn64_const) >> 58];
 #endif
     }
+
+    #if HAVE_GNUC_C__
+    __attribute__((const, optimize("no-if-conversion")))
+    #endif
+    inline u64_t _tzcnt_x(umax_t x)
+    {
+        if constexpr (constant::max_int_size == 16)
+            return static_cast<u64_t>(x) ? tzcnt(static_cast<u64_t>(x)) : 64 + tzcnt(static_cast<u64_t>(x >> 64));
+        return tzcnt(static_cast<u64_t>(x));
+    }
 }

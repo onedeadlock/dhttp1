@@ -4,21 +4,25 @@
 
 namespace dhttp::common::constant
 {
-    static constexpr std::size_t max_int_size = sizeof (umax_t);
-    static constexpr std::size_t max_int_p    = (max_int_size >> 1) - 1;
+    static constexpr std::size_t max_int_size   = sizeof (umax_t);
+    static constexpr std::size_t max_int_size_p = (max_int_size >> 1) - 1;
 
     constexpr umax_t c7f = 0x7f7f7f7f7f7f7f7fULL;
+    constexpr umax_t cff = 0xffffffffffffffffULL;
     constexpr umax_t c80 = 0x8080808080808080ULL;
     constexpr umax_t c01 = 0x0101010101010101ULL;
-    constexpr umax_t c20 = 0x2020202020202020ULL;
     constexpr umax_t c09 = 0x0909090909090909ULL;
+    constexpr umax_t c20 = 0x2020202020202020ULL;
+    constexpr umax_t c30 = 0x3030303030303030ULL;
     constexpr umax_t cdf = 0xdfdfdfdfdfdfdfdfULL;
     
     constexpr umax_t msb_64  = 0x8000000000000000ULL;
     constexpr umax_t max_c7f = UMAX_C(c7f) << 64 | c7f;
+    constexpr umax_t max_cff = UMAX_C(cff) << 64 | cff;
     constexpr umax_t max_c80 = UMAX_C(c80) << 64 | c80;
     constexpr umax_t max_c01 = UMAX_C(c01) << 64 | c01;
     constexpr umax_t max_c20 = UMAX_C(c20) << 64 | c20;
+    constexpr umax_t max_c30 = UMAX_C(c30) << 64 | c30;
     constexpr umax_t max_c09 = UMAX_C(c09) << 64 | c09;
     constexpr umax_t max_cdf = UMAX_C(cdf) << 64 | cdf;
 
@@ -78,7 +82,7 @@ namespace dhttp::common::scalar
     {
         static_assert(A < 0x7f);
 
-        constexpr umax_t a = _dup(0x7f + A);
+        static constexpr umax_t a = _dup(0x7f + A);
         return (a - (v & constant::max_c7f)) & (~v & constant::max_c80);
     }
 
@@ -87,7 +91,7 @@ namespace dhttp::common::scalar
     {
         static_assert(A < 0x7f);
 
-        constexpr umax_t a = _dup(0x7f - A);
+        static constexpr umax_t a = _dup(0x7f - A);
         return (v | (a + (v & constant::max_c7f))) & constant::max_c80;
     }
 
@@ -96,8 +100,8 @@ namespace dhttp::common::scalar
     {
         static_assert(A < 0x7f && B < 0x80);
 
-        constexpr umax_t a = _dup(0x7f - A);
-        constexpr umax_t b = _dup(0x7f + B);
+        static constexpr umax_t a = _dup(0x7f - A);
+        static constexpr umax_t b = _dup(0x7f + B);
         return (b - (v & constant::max_c7f)) & (a + (v & constant::max_c7f)) & (~v & constant::max_c80);
     }
 
@@ -106,9 +110,14 @@ namespace dhttp::common::scalar
         return (constant::Z - (v & constant::AZ_const)) & (constant::A + (v & constant::AZ_const)) & (~v & constant::max_c80);
     }
 
-    inline umax_t ascii_numbers(umax_t v)
+    inline umax_t ascii_numbers_v(umax_t v)
     {
         return _cmpml<'\x2f', '\x3a'>(v);
+    }
+
+    inline umax_t ascii_numbers(umax_t v)
+    {
+        return _cmplt<10>(v ^ constant::max_c30);
     }
 
     inline umax_t ascii_hyphen(umax_t v)
