@@ -139,14 +139,14 @@ namespace dhttp::Implementation
     class http
     {
     public:
-        http() : req_type{_req_type::type::request}, version(99) {}
+        http() : req_type{_req_type::type::request}, version(-1) {}
 
     private:
         _req_type::type req_type;
         req_state state;
         req_line reqline;
         int version;
-        int   req_version(const uint8_t i);
+        int   req_version(u8_t i);
         u16_t req_size(const u16_t (&req)[], const int i) const;
         bool  req_version_is_http_1(const void *ver_string);
         bool  req_version_tag(const u16_t (&req)[], const void *buf, const _req_type::req_index& i);

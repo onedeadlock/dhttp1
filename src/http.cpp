@@ -84,7 +84,7 @@ namespace dhttp::Implementation
     /////////////////////////////////////////////
     /////////////////////////////////////////////
 
-    inline int http::req_version(const u8_t i)
+    inline int http::req_version(u8_t i)
     {
         return (this->version = i ^ '\x30') < 10;
     }
@@ -108,7 +108,7 @@ namespace dhttp::Implementation
         return (req_size(req, i[0]) == req_version_required_size) and req_version_is_http_1(in + req[i[0]]);
     }
 
-    inline bool req_header_value(const simd &v, const u64_t lf, const u64_t cr, const u64_t crlf)
+    inline bool req_header_value(const simd &v)
     {
         return false;
     }
@@ -167,76 +167,52 @@ namespace dhttp::Implementation
         return -((state.j isnot 0) or (req_version_tag(reqline.req_line, in, _req_type::index[req_type]) isnot http_1));
     }
 
-    template <typename T = u16_t, std::size_t out_size>
+    template <typename T, std::size_t out_size>
     int http::parse_header(void *in, size_t in_size, req<T, out_size> &out, const simd &v, u64_t &lf, u64_t &cr, u64_t &crlf)
     {
-        auto &header = out[state.j];
+        static const simd v_col {'\x3a'};
+        auto set_header = [state](auto& cp, auto &np, auto mask, int skip)
+            {
+                u64_t end = state.pos + tzcnt(mask);
+                cp.len = end - cp.pos;
+                np.pos = end + skip;
+            };
+
+        auto isnot_valid_header_value = [&](void *in, T &pos, T &len)
+        {
+            return trim_whitespace(in, pos, len) or req_header_value(v, lf, cr, crlf);
+        };
 
         if (state.pending_value)
         {
-            if (not crlf)
-            {
-                header.value.len += 64, state.pos += 64;
-                return req_header_value(v, lf, cr, crlf);
-            }
+            if not (crlf)
+                return state.pos += 64, req_header_value(v);
+            set_header(out[state.j].value, crlf, 1);
             state.j += 1;
-            crlf &= crlf - 1;
-            state.pending_value = false;
-            header.value.len += bits::tzcnt(crlf);
-            bool all_wsp = trim_whitespace(in, header.value.pos, header.value.len);
-             if unlikely (all_wsp or req_header_value(v, lf, cr, crlf) < 0)
+            if unlikely (isnot_valid_header_value())
                 return -400;
         }
-
-        static const simd v_col {'\x3a'};
-        u64_t col = simd::movemask(simd::cmpeq(v, v_col));
-        if unlikely (state.pending_name and not col)
-            return not (header.name.len += 64);
-        if (col)
+        if (int ret = 0; state.pending_value and (ret = set_value(out[state.j])) < 1)
+            return ret;
+        for (u64_t col = simd::movemask(simd::cmpeq(v, v_col)); true; )
         {
-            u64_t mask = 0;
-            if unlikely (req_header_value(v, lf, cr, crlf, mask) is false)
+            auto &header = out[state.j];
+            const u64_t first_col = bits::lsb(col);
+
+            if constexpr (not OPTIMIZE_FOR_MOST_CASE)
+                if unlikely (crlf and bits::lsb(crlf) < bits::lsb(col))
+                    return -400;
+            if not (col)
+                return (state.pos += 64), not(state.pending_name = true);
+            set_header(header.name, header.value, col, 2);
+            state.pending_value = true;
+            if (req_header_name(in, header.name.len))
                 return -400;
-            
-            while (col)
-            {
-                const u64_t first_col = bits::lsb(col);
-                const u64_t pre_col   = bits::xlsfill(first_col);
-                const u64_t eol       = bits::lsb(crlf & pre_col); // next crlf after first colon
-
-                if unlikely ((eol and eol < first_col) and not state.pending_name)
-                    return -400;
-
-                //////////////// HEADER ////////////////
-                 auto &header = out[state.j];
-                //// NAME
-                if likely (not state.pending_name)
-                {
-                    header.name.len = 0;
-                    header.name.pos = state.pos;
-                }
-                header.name.len += bits::tzcnt(first_col) - 1;
-                if unlikely (not req_header_name(static_cast<const u8_t *>(in) + header.name.pos, header.name.len))
-                    return -400;
-
-                //// VALUE
-                mask &= pre_col;
-                header.value.pos = bits::tzcnt(mask);
-                if not (eol)
-                {
-                    header.value.len = 63 - header.value.len;
-                    state.pending_name = true;
-                    return 0;
-                }
-                header.value.len = bits::tzcnt(bits::trim_u(mask)) - header.name.len;
-
-                col  &= pre_col;
-                crlf &= crlf - 1;
-                state.j += 1;
-            }
+            if (int ret = set_value<T, out_size>(out, crlf & bits::xlsfill(first_col)); ret < 1)
+                return ret;
+            col  &= bits::xlsfill(crlf);
+            crlf &= crlf - 1;
         }
-        state.pending_name = crlf and not col;
-        state.trailing_cr  = static_cast<bool>(cr & constant::msb_64);
         return 0;
     }
 
