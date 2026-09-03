@@ -150,7 +150,7 @@ namespace dhttp::Implementation
             state.pos += 1;                 // +lf
             return 0;
         }
-
+        
         u64_t mask = sp | cr | lf;
         for (u64_t umask = mask & bits::blsmask(cr | lf); umask and state.j; umask &= umask - 1)
             reqline.req_line[state.j--] = state.pos + bits::tzcnt(umask);
@@ -185,18 +185,17 @@ namespace dhttp::Implementation
 
         if (state.pending_value)
         {
+            auto& header = out[state.j];
             if not (crlf)
                 return state.pos += 64, req_header_value(v);
-            set_header(out[state.j].value, crlf, 1);
+            set_header(header.value, out[state.j + 1].name, crlf, 1);
             state.j += 1;
-            if unlikely (isnot_valid_header_value())
+            if unlikely (isnot_valid_header_value(in, header.value.pos, header.value.len))
                 return -400;
         }
-        if (int ret = 0; state.pending_value and (ret = set_value(out[state.j])) < 1)
-            return ret;
         for (u64_t col = simd::movemask(simd::cmpeq(v, v_col)); true; )
         {
-            auto &header = out[state.j];
+            auto& header = out[state.j];
             const u64_t first_col = bits::lsb(col);
 
             if constexpr (not OPTIMIZE_FOR_MOST_CASE)
@@ -206,11 +205,13 @@ namespace dhttp::Implementation
                 return (state.pos += 64), not(state.pending_name = true);
             set_header(header.name, header.value, col, 2);
             state.pending_value = true;
-            if (req_header_name(in, header.name.len))
-                return -400;
-            if (int ret = set_value<T, out_size>(out, crlf & bits::xlsfill(first_col)); ret < 1)
-                return ret;
+            if not (crlf)
+                return state.pos += 64, req_header_value(v);
+            set_header(out[state.j].value, crlf & bits::xlsfill(first_col), 1);
+            state.j += 1;
             col  &= bits::xlsfill(crlf);
+            if unlikely (req_header_name(header.name.len) or isnot_valid_header_value(in, header.value.pos, header.value.len))
+                return -400;
             crlf &= crlf - 1;
         }
         return 0;
