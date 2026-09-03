@@ -53,14 +53,9 @@ namespace dhttp::Implementation
 
     inline bool req_header_name(u8_t *b, u64_t len)
     {
+        if constexpr (not STRICT_HTTP or IGNORE_LEADING_SP)
+            len -= is_whitespace(b[len - 1]);
         bool valid = true;
-        if constexpr (IGNORE_LEADING_SP)
-        {
-            int i = lcount_whitespace(b, len);
-            len -= i;
-            if unlikely (i > 1)
-                return false;
-        }
         const u16_t e = len >> constant::max_int_size_p;
         const u64_t r = len & (constant::max_int_size - 1);
 
