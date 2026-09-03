@@ -13,7 +13,7 @@ namespace dhttp::Implementation
         return (x == '\x20') or (x == '\x09'); // only for space and horizontal tab
     };
 
-    inline std::size_t rcount_whitespace(void *b, std::size_t len)
+    inline std::size_t rcount_whitespace(void *b, u64_t len)
     {
         std::size_t i = 0;
         while (i < len and is_whitespace(reinterpret_cast<u8_t *>(b)[i++]))
@@ -21,24 +21,13 @@ namespace dhttp::Implementation
         return i;
     }
     
-    inline std::size_t lcount_whitespace(void *b, std::size_t len)
+    inline std::size_t lcount_whitespace(void *b, u64_t len)
     {
         std::size_t i = len;
         while (i and is_whitespace(reinterpret_cast<u8_t *>(b)[--i]))
             pass();
         return len - i;
     }
-
-    inline bool trim_whitespace(void *b, u64_t &t_len, u64_t &l_len)
-    {
-        void *v = reinterpret_cast<u8_t *>(b) + t_len;
-        std::size_t tsp_len = rcount_whitespace(v, 0);
-        if unlikely (tsp_len == l_len)
-            return 1;
-        t_len += tsp_len;
-        l_len -= lcount_whitespace(v, l_len);
-        return 0;
-    };
         
     inline u64_t req_valid_tchar(const u8_t *b)
     {
@@ -62,18 +51,25 @@ namespace dhttp::Implementation
         return tables::tchar_map[b];
     }
 
-    inline bool req_header_name(const u8_t *buf, const u16_t len)
+    inline bool req_header_name(u8_t *b, u64_t len)
     {
         bool valid = true;
+        if constexpr (IGNORE_LEADING_SP)
+        {
+            int i = lcount_whitespace(b, len);
+            len -= i;
+            if unlikely (i > 1)
+                return false;
+        }
         const u16_t e = len >> constant::max_int_size_p;
         const u64_t r = len & (constant::max_int_size - 1);
 
         for (u16_t j = 0; j < e and valid; j++)
-            valid = req_tchar(reinterpret_cast<const u64_t *>(buf) + j, constant::max_cff);
+            valid = req_tchar(reinterpret_cast<const u64_t *>(b) + j, constant::max_cff);
         if not (valid and r)
             return valid;
         const u64_t r_mask = (1U << (r << constant::max_int_size_p)) - 1;
-        return r == 1 ? req_single_tchar(*(buf + e)) : req_tchar(reinterpret_cast<const u64_t *>(buf) + e, r_mask);
+        return r == 1 ? req_single_tchar(*(b + e)) : req_tchar(reinterpret_cast<const u64_t *>(b) + e, r_mask);
     }
 
     /////////////////////////////////////////////
@@ -96,13 +92,13 @@ namespace dhttp::Implementation
         return mask == (*reinterpret_cast<const u64_t *>(ver_string) & 0x00ffffffffffffff) and req_version(reinterpret_cast<const u8_t *>(ver_string)[7]);
     }
 
-    inline u16_t http::req_size(const u16_t (&req)[], const int i) const
+    inline u16_t http::req_size(const u64_t (&req)[], const int i) const
     {
         return this->req_type is _req_type::type::request ? (req[i - 0] - (req[i + 1]) - 1)
                                                           : (req[i - 1] - (req[i - 0]) - 1); // -1 for the sp seperator
     }
 
-    inline bool http::req_version_tag(const u16_t (&req)[], const void *in, const _req_type::req_index &i)
+    inline bool http::req_version_tag(const u64_t (&req)[], const void *in, const _req_type::req_index &i)
     {
         static constexpr u16_t req_version_required_size = 8; // len(HTTP/1.x)
         return (req_size(req, i[0]) == req_version_required_size) and req_version_is_http_1(in + req[i[0]]);
@@ -113,17 +109,26 @@ namespace dhttp::Implementation
         return false;
     }
 
-    inline bool req_header_value(const simd &v, const u64_t lf, const u64_t cr, const u64_t crlf, u64_t &mask)
+    template <typename T>
+    inline bool trim_whitespace(void *b, T &pos, T &len)
     {
-        if constexpr (HAVE_SHUFFLE__)
-        {
-            // TODO: use shuffle (pshufb)
-            return 0;
-        }
+        static_assert(sizeof(T) <= sizeof(u64_t));
+        void *bv = reinterpret_cast<u8_t *>(b) + pos;
+        std::size_t t_pos = rcount_whitespace(bv, static_cast<u64_t>(len));
+
+        if unlikely (t_pos == len)
+            return 1; // all whitespace
+        pos += t_pos;
+        len -= lcount_whitespace(bv, static_cast<u64_t>(len));
+        return 0;
+    };
+
+    template <typename V>
+    inline bool req_header_value(void *in, simd &v, V &value, u64_t lf, u64_t cr, u64_t crlf, bool done)
+    {
         static const simd sp{'\x20'}, htab{'\x9'};
-        simd z = simd::cmpglt(v, '\x19', '\x7f') | simd::sign(v);
-        // mask   = simd::movemask(simd::andnot(z, simd::cmpeq(v, sp) | simd::cmpeq(v, htab)));
-        return not simd::testzero(z | htab) and ((cr & constant::msb_64 | lf) and crlf);
+        bool is_valid = simd::testzero(simd::cmpglt(v, '\x19', '\x7f') | simd::sign(v) | simd::cmpeq(v, htab));
+        return not is_valid and ((cr & constant::msb_64 | lf) and crlf);
     }
 
     int http::parse_request_line(const void *in, const std::size_t size, const simd &v, u64_t &lf, u64_t &cr, u64_t &crlf)
@@ -167,26 +172,27 @@ namespace dhttp::Implementation
         return -((state.j isnot 0) or (req_version_tag(reqline.req_line, in, _req_type::index[req_type]) isnot http_1));
     }
 
-    template <typename T, std::size_t out_size>
-    int http::parse_header(void *in, size_t in_size, req<T, out_size> &out, const simd &v, u64_t &lf, u64_t &cr, u64_t &crlf)
+    template <typename T, T out_size>
+    int http::parse_header(void *in, size_t in_size, req<T, out_size> &out, const simd &v, u64_t lf, u64_t cr, u64_t __crlf)
     {
         static const simd v_col {'\x3a'};
-        auto set_header = [state](auto& cp, auto &np, auto mask, int skip)
+        u64_t crlf = __crlf; // copy
+        auto set_header = [](auto& cp, auto &np, auto pos, auto mask, int skip)
             {
-                u64_t end = state.pos + tzcnt(mask);
+                u64_t end = pos + tzcnt(mask);
                 cp.len = end - cp.pos;
                 np.pos = end + skip;
             };
 
         if (state.pending_value)
         {
-            bool all_whitespace = true;
             auto& value = out[state.j].value;
             if not (crlf)
                 return state.pos += 64, req_header_value(v);
             state.j += 1;
-            set_header(value, out[state.j].name, crlf, 2);
-            if unlikely (not req_header_value(v, lf, cr, crlf) or trim_whitespace(in, value.pos, value.len) is all_whitespace)
+            set_header(value, out[state.j].name, state.pos, crlf, 2);
+            crlf &= crlf - 1;
+            if unlikely (not req_header_value(v, lf, cr, __crlf) or trim_whitespace<T>(in, value.pos, value.len))
                 return -400;
         }
         for (u64_t col = simd::movemask(simd::cmpeq(v, v_col)); true; )
@@ -199,22 +205,21 @@ namespace dhttp::Implementation
                     return -400;
             if not (col)
                 return state.pos += 64;
-            set_header(name, value, col, 1);
+            set_header(name, value, state.pos, col, 1);
             if not (crlf)
                 return state.pos += 64, req_header_value(v);
             state.j += 1;
-            set_header(value, out[state.j].name, crlf & bits::xlsfill(first_col), 2);
+            set_header(value, out[state.j].name, state.pos, crlf & bits::xlsfill(first_col), 2);
             col  &= bits::xlsfill(crlf);
-            if unlikely (not req_header_name(in, name.len)     or
-                         not req_header_value(v, lf, cr, crlf) or
-                         trim_whitespace(in, value.pos, value.len) is all_whitespace)
-                return -400;
             crlf &= crlf - 1;
+            bool all_wsp = trim_whitespace<T>(in, value.pos, value.len);
+            if unlikely (all_wsp or not req_header_name(in, name.len) or not req_header_value(v, lf, cr, __crlf, 0))
+                return -400;
         }
         return 0;
     }
 
-    template <typename T = u16_t, std::size_t out_size>
+    template <typename T, T out_size>
     int http::parse(void *in, size_t in_size, req<T, out_size> &out)
     {
         static_assert(out_size != 0);

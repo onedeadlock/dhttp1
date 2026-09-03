@@ -40,6 +40,9 @@
 #ifndef SUPPORT_FULL_TCHAR
 #    define SUPPORT_FULL_TCHAR 0
 #endif
+#ifndef IGNORE_LEADING_SP
+#define IGNORE_LEADING_SP 0
+#endif
 /////////////////////////////////////
 /////////////////////////////////////
 

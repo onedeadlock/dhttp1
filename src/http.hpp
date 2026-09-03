@@ -47,15 +47,16 @@ namespace dhttp::Implementation
     constexpr int COMPLETE = 0;
     constexpr int EXPECT_DATA = 1;
 
-    template <typename T, size_t N>
+    template <typename T, T N>
     struct req
     {
-        static_assert(std::is_integral_v<T> && N > 0);
-        static constexpr u64_t __size = N;
-        u64_t __used = 0;
+        static_assert(std::is_integral_v<T> and (sizeof(T) < sizeof(u64_t)) and N > 0);
+        static constexpr T __size = N;
+        T __used = 0;
 
-        using __pair = struct
+        struct __pair
         {
+            using int_type as T;
             T len, pos;
         };
 
@@ -101,13 +102,13 @@ namespace dhttp::Implementation
             [1]  version  | msg
             [0]  NULL     | NULL
         */
-        u16_t req_line[4];
+        u64_t req_line[4];
     };
 
     struct req_state
     {
-        u16_t pos           = 0; // absolute index of last byte parsed
-        u16_t j             = 3; // request line field count (0, 3)
+        u64_t pos           = 0; // absolute index of last byte parsed
+        u64_t j             = 3; // request line field count (0, 3)
         bool  trailing_sp   = 0; // carry of trailing sp
         bool  trailing_cr   = 0;
         bool  req_line      = 0; // request line
@@ -147,12 +148,13 @@ namespace dhttp::Implementation
         req_line reqline;
         int version;
         int   req_version(u8_t i);
-        u16_t req_size(const u16_t (&req)[], const int i) const;
+        u16_t req_size(const u64_t (&req)[], const int i) const;
         bool  req_version_is_http_1(const void *ver_string);
-        bool  req_version_tag(const u16_t (&req)[], const void *buf, const _req_type::req_index& i);
-        template <typename T = u16_t, std::size_t out_size> int parse(void *in, size_t in_size, req<T, out_size> &out);
+        bool  req_version_tag(const u64_t (&req)[], const void *buf, const _req_type::req_index& i);
+        template <typename T, T out_size>
+        int parse(void *in, size_t in_size, req<T, out_size> &out);
         int parse_request_line(const void *in, const std::size_t size, const simd &v, u64_t &lf, u64_t &cr, u64_t &crlf);
-        template <typename T = u16_t, std::size_t out_size>
-        int parse_header(void *in, size_t in_size, req<T, out_size> &out, const simd &v, u64_t &lf, u64_t &cr, u64_t &crlf);
+        template <typename T, T out_size>
+        int parse_header(void *in, size_t in_size, req<T, out_size> &out, const simd &v, u64_t lf, u64_t cr, u64_t crlf);
     };
 };
