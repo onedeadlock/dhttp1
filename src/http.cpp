@@ -150,7 +150,7 @@ namespace dhttp::Implementation
             state.pos += 1;                 // +lf
             return 0;
         }
-        
+
         u64_t mask = sp | cr | lf;
         for (u64_t umask = mask & bits::blsmask(cr | lf); umask and state.j; umask &= umask - 1)
             reqline.req_line[state.j--] = state.pos + bits::tzcnt(umask);
@@ -178,39 +178,36 @@ namespace dhttp::Implementation
                 np.pos = end + skip;
             };
 
-        auto isnot_valid_header_value = [&](void *in, T &pos, T &len)
-        {
-            return trim_whitespace(in, pos, len) or req_header_value(v, lf, cr, crlf);
-        };
-
         if (state.pending_value)
         {
-            auto& header = out[state.j];
+            bool all_whitespace = true;
+            auto& value = out[state.j].value;
             if not (crlf)
                 return state.pos += 64, req_header_value(v);
-            set_header(header.value, out[state.j + 1].name, crlf, 1);
             state.j += 1;
-            if unlikely (isnot_valid_header_value(in, header.value.pos, header.value.len))
+            set_header(value, out[state.j].name, crlf, 2);
+            if unlikely (not req_header_value(v, lf, cr, crlf) or trim_whitespace(in, value.pos, value.len) is all_whitespace)
                 return -400;
         }
         for (u64_t col = simd::movemask(simd::cmpeq(v, v_col)); true; )
         {
-            auto& header = out[state.j];
+            auto& name = out[state.j].name, &value = out[state.j].value;
             const u64_t first_col = bits::lsb(col);
 
             if constexpr (not OPTIMIZE_FOR_MOST_CASE)
                 if unlikely (crlf and bits::lsb(crlf) < bits::lsb(col))
                     return -400;
             if not (col)
-                return (state.pos += 64), not(state.pending_name = true);
-            set_header(header.name, header.value, col, 2);
-            state.pending_value = true;
+                return state.pos += 64;
+            set_header(name, value, col, 1);
             if not (crlf)
                 return state.pos += 64, req_header_value(v);
-            set_header(out[state.j].value, crlf & bits::xlsfill(first_col), 1);
             state.j += 1;
+            set_header(value, out[state.j].name, crlf & bits::xlsfill(first_col), 2);
             col  &= bits::xlsfill(crlf);
-            if unlikely (req_header_name(header.name.len) or isnot_valid_header_value(in, header.value.pos, header.value.len))
+            if unlikely (not req_header_name(in, name.len)     or
+                         not req_header_value(v, lf, cr, crlf) or
+                         trim_whitespace(in, value.pos, value.len) is all_whitespace)
                 return -400;
             crlf &= crlf - 1;
         }
