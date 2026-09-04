@@ -242,20 +242,25 @@ namespace dhttp::Implementation
     {
     public:
         http()
-            : req_type{_req_type::type::request},
-              version(-1),
+            : req_type(_req_type::type::request),
               out_reader(3),
-              in_reader(0, read_size) {}
+              in_reader(0, read_size),
+              version(-1),
+              state(0),
+              unused(true) {}
 
     private:
         /// READ SIZE
-        static constexpr int read_size = 64;
+        static constexpr unsigned int read_size = 64;
 
         _req_type::type req_type;
-        req_state state;
         req_line reqline;
         Reader out_reader, in_reader;
         int version;
+        u8_t state;
+        bool unused;
+
+
         int   req_version(u8_t i);
         u16_t req_size(const u64_t (&req)[], const int i) const;
         bool  req_version_is_http_1(const void *ver_string);
@@ -265,5 +270,46 @@ namespace dhttp::Implementation
         int parse_request_line(const void *in, const std::size_t size, const simd &v, u64_t &lf, u64_t &cr, u64_t &crlf);
         template <typename T, T out_size>
         int parse_header(void *in, size_t in_size, req<T, out_size> &out, const simd &v, u64_t lf, u64_t cr, u64_t crlf);
+
+        // TODO
+        bool incomplete_request_line(void)
+        {
+            return state & 0;
+        }
+
+        bool completed_request_line(void)
+        {
+            return state = 0;
+        }
+
+        bool has_pending_value(void)
+        {
+            return state & 0;
+        }
+
+        void set_pending_value(void)
+        {
+            state = 0;
+        }
+
+        void set_trailing_ret(bool x)
+        {
+            state = 0;
+        }
+
+        bool has_trailing_ret(void)
+        {
+            return state & 0;
+        }
+
+        void set_trailing_whitespace(bool x)
+        {
+            state = 0;
+        }
+
+        bool has_trailing_whitespace(void)
+        {
+            return state & 0;
+        }
     };
 };
