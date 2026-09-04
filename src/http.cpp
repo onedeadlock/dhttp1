@@ -131,40 +131,40 @@ namespace dhttp::Implementation
         static const simd vsp  {'\x20'};
         static const simd vhtab{'\x9' };
 
-        const u64_t sp        = simd::movemask(simd::cmpeq2(v, vsp, vhtab));
-        const u64_t valid_sp  = ~static_cast<const u64_t>(state.trailing_sp) & bits::trim(sp);
-        const u64_t tchar     = simd::movemask(simd::cmpglt(v, '\x20', '\x7f')) | valid_sp;
-
-        auto has_any_rejected_token = [&]{ return (~tchar | lf | (cr & ~constant::msb_64)) & bits::tzmask(crlf); };
-
         if unlikely ((crlf & 0x02) and state.no_init)
             return  ((crlf & crlf >> 2) & 0x04) ? -400 /* empty request */ : -400 /* blank line */;
-        if unlikely (state.pos > size or has_any_rejected_token())
-            return -400;
         if unlikely (state.trailing_cr is true)
         {
             if not (lf & 0x01)
                 return -400;
             lf &= ~0x1ULL;
             reqline.req_line[state.j] -= 1; // -cr
-            state.pos += 1;                 // +lf
+            in_reader.incr_by(1);                 // +lf
             return 0;
         }
 
+        const u64_t sp    = simd::movemask(simd::cmpeq2(v, vsp, vhtab));
+        const u64_t wsp   = ~static_cast<const u64_t>(state.trailing_sp) & bits::trim(sp); // valid whitespace
+        const u64_t tchar = simd::movemask(simd::cmpglt(v, '\x20', '\x7f')) | wsp;
+
+        auto has_any_rejected_token = [&]{ return (~tchar | lf | (cr & ~constant::msb_64)) & bits::tzmask(crlf); };
+        if unlikely (has_any_rejected_token())
+            return -400;
+
         u64_t mask = sp | cr | lf;
-        for (u64_t umask = mask & bits::blsmask(cr | lf); umask and state.j; umask &= umask - 1)
-            reqline.req_line[state.j--] = state.pos + bits::tzcnt(umask);
+        for (u64_t umask = mask & bits::blsmask(cr | lf); umask and out_reader.count(); umask &= umask - 1)
+            reqline.req_line[out_reader.decr()] = in_reader.at() + bits::tzcnt(umask);
 
         if not (crlf)
         {
             state.trailing_cr = static_cast<bool>(cr & constant::msb_64);
             state.trailing_sp = static_cast<bool>(sp & constant::msb_64);
-            return state.pos += 64, 0;
+            return in_reader.incr(), 0;
         }
         mask &= bits::tzmask(crlf), crlf &= mask, lf &= mask, cr &= mask;
-        state.pos = reqline.req_line[state.j + 1] + 2; // +2 for cr and lf
+        in_reader.incr_by(reqline.req_line[out_reader.at() + 1] + 2); // +2 for cr and lf
         state.req_line = done;
-        return -((state.j isnot 0) or (req_version_tag(reqline.req_line, in, _req_type::index[req_type]) isnot http_1));
+        return -(out_reader.iszero() or (req_version_tag(reqline.req_line, in, _req_type::index[req_type]) isnot http_1));
     }
 
     template <typename T, T out_size>
@@ -181,52 +181,54 @@ namespace dhttp::Implementation
 
         if (state.pending_value)
         {
-            auto& value = out[state.j].value;
+            auto& value = out[out_reader.at()].value;
             if not (crlf)
-                return state.pos += 64, req_header_value(v);
-            state.j += 1;
-            set_header(value, out[state.j].name, state.pos, crlf, 2);
+                return in_reader.incr(), req_header_value(v);
+            set_header(value, out[out_reader.incr()].name, state.pos, crlf, 2);
             crlf &= crlf - 1;
             if unlikely (not req_header_value(v, lf, cr, __crlf) or trim_whitespace<T>(in, value.pos, value.len))
                 return -400;
         }
         for (u64_t col = simd::movemask(simd::cmpeq(v, v_col)); true; )
         {
-            auto& name = out[state.j].name, &value = out[state.j].value;
+            auto& name = out[out_reader.at()].name, &value = out[out_reader.at()].value;
             const u64_t first_col = bits::lsb(col);
 
             if constexpr (not OPTIMIZE_FOR_MOST_CASE)
                 if unlikely (crlf and bits::lsb(crlf) < bits::lsb(col))
                     return -400;
             if not (col)
-                return state.pos += 64;
-            set_header(name, value, state.pos, col, 1);
+                return in_reader.incr();
+            set_header(name, value, in_reader.at(), col, 1);
             if not (crlf)
-                return state.pos += 64, req_header_value(v);
-            state.j += 1;
-            set_header(value, out[state.j].name, state.pos, crlf & bits::xlsfill(first_col), 2);
+                return in_reader.incr(), req_header_value(v);
+            set_header(value, out[out_reader.incr()].name, state.pos, crlf & bits::xlsfill(first_col), 2);
             col  &= bits::xlsfill(crlf);
             crlf &= crlf - 1;
             bool all_wsp = trim_whitespace<T>(in, value.pos, value.len);
             if unlikely (all_wsp or not req_header_name(in, name.len) or not req_header_value(v, lf, cr, __crlf, 0))
                 return -400;
         }
+        in_reader.incr();
         return 0;
     }
 
     template <typename T, T out_size>
     int http::parse(void *in, size_t in_size, req<T, out_size> &out)
     {
-        static_assert(out_size != 0);
+        static_assert(std::is_integral_v(T) and sizeof(T) <= sizeof(u64_t));
+        static_assert(out_size > 0);
 
         static const simd v_lf {'\xa'};
         static const simd v_cr {'\xd'};
 
-        const std::size_t n = (in_size + 63) & ~(std::size_t)63; // align read/load size to 64
+        if unlikely ((not in_reader.iszero() and in_size > in_reader.count()) or (not out_reader.iszero() and out_size > out_reader.count()))
+            return -400;
+        const std::size_t n = in_size / this->read_size; // align read/load size to 64
 
         for (std::size_t j = 0; j < n; j += 64)
         {
-            u8_t *b = static_cast<u8_t *>(in) + j;
+            u8_t *b = reinterpret_cast<u8_t *>(in) + j;
             simd::v = b;
 
             u64_t lf   = simd::movemask(simd::cmpeq(v, v_lf ));
@@ -246,6 +248,12 @@ namespace dhttp::Implementation
                 if (('\xd' is b[-3]) && ('\xa' is b[-2]) && ('\xd' is b[-1]) && ('\xa' is b[0]))
                     return j + 4;
         }
-        return dhttp::EXPECT_DATA;
+
+        u64_t re = in_size % this->read_size;
+        if (not re)
+            return 0;
+        simd safe_read = simd{tables::mask_win[this->read_size - re]} & simd {reinterpret_cast<u8_t>(in) + in_size - re};
+        // TODO
+        return 0;
     }
 }

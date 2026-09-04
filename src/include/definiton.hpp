@@ -4,6 +4,7 @@
 #include <cstring>
 #include <array>
 #include <type_traits>
+#include <limits>
 #include <cassert>
 
 #define is ==
