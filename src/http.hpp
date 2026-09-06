@@ -140,51 +140,43 @@ namespace dhttp::Implementation
             return __i == 0;
         }
 
-        u64_t get_incr(void) const noexcept
+        inline u64_t get_incr(void) const noexcept
         {
             return __incr;
         }
 
-        u64_t incr(void) noexcept
+        inline u64_t incr_by(u64_t i) noexcept
         {
-            return __i += __incr;
-        }
-
-        u64_t decr(void) noexcept
-        {
-            return __i -= __incr;
-        }
-
-        u64_t incr_by(u64_t i) noexcept
-        {
+            assert(__i <= (__max - i));
             return __i += i;
         }
 
-        u64_t decr_by(u64_t i) noexcept
+        inline u64_t decr_by(u64_t i) noexcept
         {
+            assert(__i >= i);
             return __i -= i;
         }
 
-        u64_t safe_incr(void) noexcept
+        inline u64_t incr(void) noexcept
         {
-            assert(__i < (__max - __incr));
+            assert(__i <= (__max - __incr));
             return __i += __incr;
         }
 
-        u64_t safe_decr(void) noexcept
+        inline u64_t decr(void) noexcept
         {
-            assert(__i > __incr);
+            assert(__i >= __incr);
             return __i -= __incr;
         }
 
-        u64_t operator++(void)
+        inline u64_t operator++(void)
         {
-            return safe_incr();
+            return incr();
         }
 
-        u64_t operator--(void)
+        inline u64_t operator--(void)
         {
-            return safe_decr();
+            return decr();
         }
 
         private:
@@ -272,42 +264,42 @@ namespace dhttp::Implementation
         int parse_header(void *in, size_t in_size, req<T, out_size> &out, const simd &v, u64_t lf, u64_t cr, u64_t crlf);
 
         // TODO
-        bool incomplete_request_line(void)
+        inline bool incomplete_request_line(void)
         {
             return state & 0;
         }
 
-        bool completed_request_line(void)
+        inline bool completed_request_line(void)
         {
             return state = 0;
         }
 
-        bool has_pending_value(void)
+        inline bool has_pending_value(void)
         {
             return state & 0;
         }
 
-        void set_pending_value(void)
+        inline void set_pending_value(void)
         {
             state = 0;
         }
 
-        void set_trailing_ret(bool x)
+        inline void set_trailing_ret(bool x)
         {
             state = 0;
         }
 
-        bool has_trailing_ret(void)
+        inline bool has_trailing_ret(void)
         {
             return state & 0;
         }
 
-        void set_trailing_whitespace(bool x)
+        inline void set_trailing_whitespace(bool x)
         {
             state = 0;
         }
 
-        bool has_trailing_whitespace(void)
+        inline bool has_trailing_whitespace(void)
         {
             return state & 0;
         }
