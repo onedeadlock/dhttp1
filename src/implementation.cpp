@@ -99,7 +99,8 @@ namespace dhttp::Implementation
         return (req_size(req, i[0]) == req_version_required_size) and req_version_is_http_1(in + req[i[0]]);
     }
 
-    inline bool req_header_value(const simd &v)
+    template<int N>
+    inline bool req_header_value(simdv<N>& v)
     {
         return false;
     }
@@ -118,18 +119,20 @@ namespace dhttp::Implementation
         return 0;
     };
 
-    template <typename V>
-    inline bool req_header_value(void *in, simd &v, V &value, u64_t lf, u64_t cr, u64_t crlf, bool done)
+    template <typename V, int N>
+    inline bool req_header_value(void *in, simdv<N> &v, V &value, u64_t lf, u64_t cr, u64_t crlf, bool done)
     {
-        static const simd sp{'\x20'}, htab{'\x9'};
-        bool is_valid = simd::testzero(simd::cmpglt(v, '\x19', '\x7f') | simd::sign(v) | simd::cmpeq(v, htab));
+        static simdv<N> sp   = simdv<N>::splat('\x20');
+        static simdv<N> htab = simdv<N>::splat('\x9' );
+        bool is_valid = simdv<N>::is_zero(simdv<64>::_or(simdv<64>::gt_or_lt(v, '\x19', '\x7f'), simdv<64>::_or(simdv<64>::sign(v), simdv::cmpeq(v, htab))));
         return not is_valid and ((cr & constant::msb_64 | lf) and crlf);
     }
 
-    int http::parse_request_line(const void *in, const std::size_t size, const simd &v, u64_t &lf, u64_t &cr, u64_t &crlf)
+    template<int N>
+    int http::parse_request_line(const void *in, const std::size_t size, const simdv<N>& v, u64_t& lf, u64_t& cr, u64_t& crlf)
     {
-        static const simd vsp  {'\x20'};
-        static const simd vhtab{'\x9' };
+        static const simdv<N> vsp   = simdv<N>::splat('\x20');
+        static const simdv<N> vhtab = simdv<N>::splat('\x9' );
 
         if unlikely ((crlf & 0x02) and this->unused)
             return  ((crlf & crlf >> 2) & 0x04) ? -400 /* empty request */ : -400 /* blank line */;
@@ -143,9 +146,9 @@ namespace dhttp::Implementation
             return 0;
         }
 
-        const u64_t sp    = simd::movemask(simd::cmpeq2(v, vsp, vhtab));
+        const u64_t sp    = simdv<N>::bitmask(simdv<N>::cmp_eq(v, vsp, vhtab));
         const u64_t wsp   = ~static_cast<const u64_t>(has_trailing_whitespace()) & bits::trim(sp); // valid whitespace
-        const u64_t tchar = simd::movemask(simd::cmpglt(v, '\x20', '\x7f')) | wsp;
+        const u64_t tchar = simdv<N>::bitmask(simdv<N>::gt_or_lt(v, '\x20', '\x7f')) | wsp;
 
         if (auto has_any_rejected_token = (~tchar | lf | (cr & ~constant::msb_64)) & bits::tzmask(crlf))
             return -400;
@@ -166,10 +169,10 @@ namespace dhttp::Implementation
         return -(out_reader.iszero() or (req_version_tag(reqline.req_line, in, _req_type::index[req_type]) isnot http_1));
     }
 
-    template <typename T, T out_size>
-    int http::parse_header(void *in, size_t in_size, req<T, out_size> &out, const simd &v, u64_t lf, u64_t cr, u64_t __crlf)
+    template <typename T, T out_size, int N>
+    int http::parse_header(void *in, size_t in_size, req<T, out_size> &out, const simdv<N> & v, u64_t lf, u64_t cr, u64_t __crlf)
     {
-        static const simd v_col {'\x3a'};
+        static const simdv<N> = simdv<N>::splat('\x3a');
         u64_t crlf = __crlf; // copy
         auto set_header = [](auto& cp, auto &np, auto pos, auto mask, int skip)
             {
@@ -188,7 +191,7 @@ namespace dhttp::Implementation
             if unlikely (not req_header_value(v, lf, cr, __crlf) or trim_whitespace<T>(in, value.pos, value.len))
                 return -400;
         }
-        for (u64_t col = simd::movemask(simd::cmpeq(v, v_col)); true; )
+        for (u64_t col = simdv<N>::bitmask(simdv<N>::cmp_eq(v, v_col)); true; )
         {
             auto& name = out[out_reader.at()].name, &value = out[out_reader.at()].value;
             const u64_t first_col = bits::lsb(col);
@@ -230,20 +233,20 @@ namespace dhttp::Implementation
         static_assert(std::is_integral_v(T) and sizeof(T) <= sizeof(u64_t));
         static_assert(out_size > 0);
 
-        static const simd v_lf {'\xa'};
-        static const simd v_cr {'\xd'};
-
         if unlikely ((not in_reader.iszero() and in_size > in_reader.count()) or (not out_reader.iszero() and out_size > out_reader.count()))
             return -400;
         const std::size_t n = in_size / this->read_size; // align read/load size to 64
 
         for (std::size_t j = 0; j < n; j += 64)
         {
-            u8_t *b = reinterpret_cast<u8_t *>(in) + j;
-            simd::v = b;
+            static const simdv v_lf = simdv<64>::splat('\xa');
+            static const simdv v_cr = simdv<64>::splat('\xd');
 
-            u64_t lf   = simd::movemask(simd::cmpeq(v, v_lf ));
-            u64_t cr   = simd::movemask(simd::cmpeq(v, v_cr ));
+            u8_t *b = reinterpret_cast<u8_t *>(in) + j;
+            simdv<64> v = simd<64>::load(b);
+
+            u64_t lf   = simdv<64>::bitmask(simdv<64>::cmp_eq(v, v_lf ));
+            u64_t cr   = simdv<64>::bitmask(simdv<64>::cmp_eq(v, v_cr ));
             u64_t crlf = cr & (lf << 1);
 
             if (incomplete_request_line() and parse_request_line(in, size, v, lf, cr, crlf) < 0)
@@ -263,8 +266,11 @@ namespace dhttp::Implementation
         u64_t re = in_size % this->read_size;
         if (not re)
             return 0;
-        simd safe_read = simd{tables::mask_win[this->read_size - re]} & simd {reinterpret_cast<u8_t>(in) + in_size - re};
-        // TODO: Handle trails
+        u8_t b[64];
+        memcpy(b, in + n, re);
+        // TODO
+        simdv<64> safe_read = simd<64>::_and(simdv<64>::load(tables::mask_win[this->read_size - re]) & simdv<64>::load(reinterpret_cast<u8_t>(in) + in_size - re));
+
         return 0;
     }
 }

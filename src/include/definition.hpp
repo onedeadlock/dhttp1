@@ -53,9 +53,10 @@
 #if defined(__GNUC__) || (defined(__clang__) && !defined(_MSC_VER))
 #    define HAVE_GNUC_C__ 1
 #elif defined(_MSC_VER)
-#    define HAVE_VIST_C__ 1
+#    define HAVE_MSVC_C__ 1
 #endif
 
+// branch prediction
 #if HAVE_GNUC_C__
 #    define likely(x)   (__builtin_expect(!!(x), 1))
 #    define unlikely(x) (__builtin_expect(!!(x), 0))
@@ -67,12 +68,23 @@
 #    define unlikely(x) (x)
 #endif
 
+// inline
 #if   HAVE_GNUC_C__
-#    define inline  [[gnu::always_inline]] inline
-#elif HAVE_VIST_C__
-#    define inline  __forceinline
+#    define inline    __attribute__((__always_inline__)) inline
+#    define make_flat __attribute__((flatten))
+#elif HAVE_MSVC_C__
+#    define inline  [[msvc::forceinline]]
+#    define make_flat 
 #else
 #    define inline inline
+#    define make_flat 
+#endif
+
+// target
+#if HAVE_GNUC_C__
+#    define TARGET(str) __attribute((target(str)))
+#else
+#    define TARGET(str) 
 #endif
 
 #define U32(x)  static_cast<const u32_t>(x)

@@ -1,3 +1,7 @@
 {
-    "C_Cpp.errorSquiggles": "enabled"
+    "C_Cpp.errorSquiggles": "enabled",
+    "workbench.colorCustomizations": {
+        "editorError.foreground": "#d2f8f3",
+        "editorError.background": "#00000000"
+    }
 }

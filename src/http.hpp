@@ -1,8 +1,8 @@
 #pragma once
-#include "include/definiton.hpp"
+#include "include/definition.hpp"
+#include "simd/implementation.hpp"
 #include "common/common.hpp"
 #include "common/bits.hpp"
-#include "simd/simd.hpp"
 
 namespace dhttp::tables
 {
@@ -258,10 +258,11 @@ namespace dhttp::Implementation
         bool  req_version_is_http_1(const void *ver_string);
         bool  req_version_tag(const u64_t (&req)[], const void *buf, const _req_type::req_index& i);
         template <typename T, T out_size>
-        int parse(void *in, size_t in_size, req<T, out_size> &out);
-        int parse_request_line(const void *in, const std::size_t size, const simd &v, u64_t &lf, u64_t &cr, u64_t &crlf);
-        template <typename T, T out_size>
-        int parse_header(void *in, size_t in_size, req<T, out_size> &out, const simd &v, u64_t lf, u64_t cr, u64_t crlf);
+        int parse(void *in, size_t in_size, req<T, out_size>& out);
+        template<int N>
+        int parse_request_line(const void *in, const std::size_t size, const simdv<N>& v, u64_t& lf, u64_t& cr, u64_t& crlf);
+        template <typename T, T out_size, int N>
+        int parse_header(void *in, size_t in_size, req<T, out_size>& out, const simdv<N>& v, u64_t lf, u64_t cr, u64_t crlf);
 
         // TODO
         inline bool incomplete_request_line(void)

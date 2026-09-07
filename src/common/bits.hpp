@@ -51,7 +51,7 @@ namespace dhttp::common::bits
     {
 #if HAVE_GNUC_C__
         return __builtin_ctzll(x);
-#elif HAVE_VIST_C__
+#elif HAVE_MSVC_C__
         u64_t vx;
         _BitScanReverse(&vx, x);
         return vx;

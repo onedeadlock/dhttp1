@@ -1,11 +1,11 @@
 #pragma once
 
-#include "../include/definiton.hpp"
+#include "../include/definition.hpp"
 
 namespace dhttp::common::constant
 {
     static constexpr std::size_t max_int_size   = sizeof (umax_t);
-    static constexpr std::size_t max_int_size_p = (max_int_size >> 1) - 1;
+    static constexpr std::size_t max_int_size_p = (max_int_size / 2) - 1;
 
     constexpr umax_t c7f = 0x7f7f7f7f7f7f7f7fULL;
     constexpr umax_t cff = 0xffffffffffffffffULL;
