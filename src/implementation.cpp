@@ -282,6 +282,7 @@ namespace dhttp::Implementation
         // Handle trailing 32 bytes
         if (re > 31)
         {
+            // TODO: Handle EOPARSE
             in_reader.set_incr(32);
             stat = parse<T, out_size, 32>(in, in_size, out, 1);
             if unlikely (re %= 32; parse_failed(stat) or not re)
