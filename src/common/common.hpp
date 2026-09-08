@@ -19,6 +19,8 @@ namespace dhttp::common::constant
     constexpr u64_t compress = 0x0002040810204081ULL;
 
     constexpr umax_t msb_64  = 0x8000000000000000ULL;
+    constexpr umax_t msb_32  = 0x0000000080000000ULL;
+
     constexpr umax_t max_c7f = UMAX_C(c7f) << 64 | c7f;
     constexpr umax_t max_cff = UMAX_C(cff) << 64 | cff;
     constexpr umax_t max_c80 = UMAX_C(c80) << 64 | c80;

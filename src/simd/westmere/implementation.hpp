@@ -9,6 +9,7 @@ namespace dhttp::simd::westmere
     alignas(32) struct simdv<32>
     {
         static constexpr int size = 32;
+        static constexpr u64_t msb = common::constant::msb_32;
 
         __m128i lo, hi;
 
@@ -173,6 +174,7 @@ namespace dhttp::simd::westmere
     alignas(64) struct simdv<64>
     {
         static constexpr int size = 64;
+        static constexpr u64_t msb = common::constant::msb_64;
     
         simdv<32> lo, hi;
 
