@@ -31,7 +31,7 @@ namespace dhttp::simd::fallback
             return static_cast<bool>(lo | xlo | hi | xhi);
         }
 
-        inline u32_t to_bitmask(void)
+        inline u64_t to_bitmask(void)
         {
             const u32_t x = ((((lo * constant::compress) >> 48) & 0xff00ULL) | ((xlo * constant::compress) >> 56));
             const u32_t y = ((((hi * constant::compress) >> 48) & 0xff00ULL) | ((xhi * constant::compress) >> 56));
@@ -55,7 +55,7 @@ namespace dhttp::simd::fallback
         }
 
 
-        static inline u32_t bitmask(const simdv& v)
+        static inline u64_t bitmask(const simdv& v)
         {
             const u32_t x = ((((v.lo * constant::compress) >> 48) & 0xff00ULL) | ((v.xlo * constant::compress) >> 56));
             const u32_t y = ((((v.hi * constant::compress) >> 48) & 0xff00ULL) | ((v.xhi * constant::compress) >> 56));
@@ -188,7 +188,7 @@ namespace dhttp::simd::fallback
         make_flat static inline u64_t bitmask(const simdv& x)
         {
 
-            return static_cast<u64_t>(simdv<32>::bitmask(x.hi)) << 32 | simdv<32>::bitmask(x.lo);
+            return simdv<32>::bitmask(x.hi) << 32 | simdv<32>::bitmask(x.lo);
         }
 
         make_flat static inline simdv cmp_zero(const simdv& v)

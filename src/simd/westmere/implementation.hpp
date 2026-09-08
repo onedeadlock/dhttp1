@@ -18,6 +18,12 @@ namespace dhttp::simd::westmere
         simdv(__m128i u, __m128i v) : lo{u}, hi{v}{}
 
         TARGET("sse4")
+        inline bool is_zero(void)
+        {
+            return is_zero({lo, hi});
+        }
+
+        TARGET("sse4")
         static inline simdv load(void *b)
         {
             return {_mm_loadu_si128(reinterpret_cast<__m128i *>(b)),
@@ -25,7 +31,7 @@ namespace dhttp::simd::westmere
         }
 
         TARGET("sse4")
-        inline u32_t to_bitmask(void)
+        inline u64_t to_bitmask(void)
         {
 
             return static_cast<u32_t>(_mm_movemask_epi8(hi)) << 16 |
@@ -39,7 +45,7 @@ namespace dhttp::simd::westmere
         }
 
         TARGET("sse4")
-        static inline u32_t bitmask(const simdv& v)
+        static inline u64_t bitmask(const simdv& v)
         {
 
             return static_cast<u32_t>(_mm_movemask_epi8(v.hi)) << 16 |
@@ -170,6 +176,12 @@ namespace dhttp::simd::westmere
     
         simdv<32> lo, hi;
 
+         TARGET("sse4")
+        inline bool is_zero(void)
+        {
+            return lo.is_zero() or hi.is_zero();
+        }
+        
         TARGET("sse4")
         make_flat static inline simdv load(void *b)
         {
@@ -187,14 +199,14 @@ namespace dhttp::simd::westmere
         make_flat inline u64_t to_bitmask(void)
         {
 
-            return static_cast<u64_t>(hi.to_bitmask()) << 32 | lo.to_bitmask();
+            return hi.to_bitmask() << 32 | lo.to_bitmask();
         }
 
         TARGET("sse4")
         make_flat static inline u64_t bitmask(const simdv& v)
         {
 
-            return static_cast<u64_t>(simdv<32>::bitmask(v.hi)) << 32 | simdv<32>::bitmask(v.lo);
+            return simdv<32>::bitmask(v.hi) << 32 | simdv<32>::bitmask(v.lo);
         }
 
         TARGET("sse4")
@@ -293,15 +305,13 @@ namespace dhttp::simd::westmere
              return static_cast<bool>(bitmask(cmp_zero(u)));
         }
 
-#if HAVE__SSSE3__
-#define HAVE_SHUFFLE__ 1
+
         make_flat static inline simdv shuffle(const simdv& u, const simdv& v)
         {
             return {simdv<32>::shuffle(u.lo, v.lo),
                     simdv<32>::shuffle(u.hi, v.hi)};
         }
-#else
+
         [[gnu::unused]] make_flat static inline simdv shuffle(const simdv& u, const simdv& x){}
-#endif
     };
 }
