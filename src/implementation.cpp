@@ -291,7 +291,10 @@ namespace dhttp::Implementation
         u8_t b[32];
         memcpy(b, in + n, re);
         // place the last re::byte in b[last]
-        b[32] = b[re - 1]; 
+        b[32] = b[re - 1];
+
+        #if HANDLE_TRAIL_LAZY
         // TODO
+        #endif
         return stat;
 }
