@@ -153,8 +153,7 @@ namespace dhttp::Implementation
         if (auto has_any_rejected_token = (~tchar | lf | (cr & ~simd<N>::msb)) & bits::tzmask(crlf))
             return -400;
         this->unused = false;
-        u64_t mask = sp | cr | lf;
-        for (u64_t umask = mask & bits::blsmask(cr | lf); umask and out_reader.count(); umask &= umask - 1)
+        for (u64_t umask = (sp |cr | lf) & bits::blsmask(cr | lf); umask and out_reader.count(); umask &= umask - 1)
             reqline.req_line[out_reader.decr()] = in_reader.at() + bits::tzcnt(umask);
 
         if not (crlf)
@@ -163,7 +162,7 @@ namespace dhttp::Implementation
             set_trailing_whitespace(static_cast<bool>(sp & simd<N>::msb));
             return in_reader.incr(), 0;
         }
-        mask &= bits::tzmask(crlf), crlf &= mask, lf &= mask, cr &= mask;
+        crlf &= crlf - 1;
         in_reader.incr_by(reqline.req_line[out_reader.at() + 1] + 2); // +2 for cr and lf
         completed_request_line();
         return -(out_reader.iszero() or (req_version_tag(reqline.req_line, in, _req_type::index[req_type]) isnot http_1));

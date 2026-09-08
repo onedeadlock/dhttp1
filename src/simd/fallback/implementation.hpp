@@ -48,7 +48,7 @@ namespace dhttp::simd::fallback
             return v;
         }
 
-        static inline simdv splat(u8_t v)
+        make_flat static inline simdv splat(u8_t v)
         {
             u64_t x = scalar::_dup(v);
             return {x, x, x, x};
@@ -62,7 +62,7 @@ namespace dhttp::simd::fallback
             return y << 16 | x;
         }
 
-        static inline simdv cmp_zero(const simdv& v)
+        make_flat static inline simdv cmp_zero(const simdv& v)
         {
             return {scalar::_cmpeqz(v.lo ),
                     scalar::_cmpeqz(v.xlo),
@@ -70,7 +70,7 @@ namespace dhttp::simd::fallback
                     scalar::_cmpeqz(v.xhi)};
         }
 
-        static inline simdv cmp_eq(const simdv& u, const simdv& v)
+        make_flat static inline simdv cmp_eq(const simdv& u, const simdv& v)
         {
             return {scalar::_cmpeq(u.lo,  v.lo ),
                     scalar::_cmpeq(u.xlo, v.xlo),
@@ -78,7 +78,7 @@ namespace dhttp::simd::fallback
                     scalar::_cmpeq(u.xhi, v.xhi)};
         }
 
-        static inline simdv cmp_eq(const simdv& u, const simdv& v, const simdv& w)
+        make_flat static inline simdv cmp_eq(const simdv& u, const simdv& v, const simdv& w)
         {
             return {
                 scalar::_cmpeq(u.lo, v.lo ) | scalar::_cmpeq(u.lo, w.lo ),
@@ -87,7 +87,7 @@ namespace dhttp::simd::fallback
                 scalar::_cmpeq(u.lo, v.xhi) | scalar::_cmpeq(u.lo, w.xhi)};
         }
 
-        static inline simdv cmp_gt(const simdv& v, u8_t a)
+        make_flat static inline simdv cmp_gt(const simdv& v, u8_t a)
         {
             u64_t x = scalar::_dup(a);
             return {scalar::_cmpgt<0>(v.lo ),
@@ -164,12 +164,12 @@ namespace dhttp::simd::fallback
         simdv<32> lo, hi;
 
         
-        inline bool is_zero(void)
+        make_flat inline bool is_zero(void)
         {
             return lo.is_zero() or hi.is_zero();
         }
 
-        inline u32_t to_bitmask(void)
+        make_flat inline u32_t to_bitmask(void)
         {
             return hi.to_bitmask() << 32 | lo.to_bitmask();
         }
