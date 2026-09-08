@@ -109,27 +109,29 @@ namespace dhttp::Implementation
     };
 
     struct Reader {
-        Reader(u64_t i=0, u64_t incr=1)
+        Reader(u64_t i=0, u64_t incr=1, u64_t max=std::numeric_limits<u64_t>::max() - 1) noexcept
         {
-            assert (i < __max);
+            assert (i    < __max);
             assert (incr < __max);
-            __i = i;
+            assert (max  < std::numeric_limits<u64_t>::max());
+            __i    = i;
             __incr = incr;
+            __max  = max;
         }
 
 
-        int set(u64_t i, u64_t incr=1) noexcept
+        int set(u64_t max, u64_t incr=1) noexcept
         {
-             if (i > __i or i > __max or incr > __max)
+             if (__i > max or incr > max)
                 return -1;
             __incr = incr;
-            __i = i;
+            __max  = max;
             return 0;
         }
 
         inline int set_incr(u64_t incr) noexcept
         {
-            if (incr < __max)
+            if (incr > __max)
                 return -1;
             __incr = incr;
             return 0;
@@ -155,16 +157,16 @@ namespace dhttp::Implementation
             return __i == 0;
         }
 
-        inline u64_t incr_by(u64_t i) noexcept
+        inline u64_t incr_by(u64_t incr) noexcept
         {
-            assert(__i <= (__max - i));
-            return __i += i;
+            assert(__i <= (__max - incr));
+            return __i += incr;
         }
 
-        inline u64_t decr_by(u64_t i) noexcept
+        inline u64_t decr_by(u64_t decr) noexcept
         {
-            assert(__i >= i);
-            return __i -= i;
+            assert(__i >= (__max - decr));
+            return __i -= decr;
         }
 
         inline u64_t incr(void) noexcept
@@ -175,7 +177,7 @@ namespace dhttp::Implementation
 
         inline u64_t decr(void) noexcept
         {
-            assert(__i >= __incr);
+            assert(__i >= (__max - __incr));
             return __i -= __incr;
         }
 
@@ -192,7 +194,7 @@ namespace dhttp::Implementation
         private:
         u64_t __i;
         u64_t __incr;
-        const static u64_t __max = std::numeric_limits<u64_t>::max() - 1;
+        u64_t __max = std::numeric_limits<u64_t>::max() - 1;
     };
 
     struct req_line
