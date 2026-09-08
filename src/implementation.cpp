@@ -146,9 +146,9 @@ namespace dhttp::Implementation
             return 0;
         }
 
-        const u64_t sp    = simdv<N>::bitmask(simdv<N>::cmp_eq(v, vsp, vhtab));
+        const u64_t sp    = simdv<N>::cmp_eq(v, vsp, vhtab).to_bitmask();
         const u64_t wsp   = ~static_cast<const u64_t>(has_trailing_whitespace()) & bits::trim(sp); // valid whitespace
-        const u64_t tchar = simdv<N>::bitmask(simdv<N>::gt_or_lt(v, '\x20', '\x7f')) | wsp;
+        const u64_t tchar = simdv<N>::gt_or_lt(v, '\x20', '\x7f').to_bitmask() | wsp;
 
         if (auto has_any_rejected_token = (~tchar | lf | (cr & ~simd<N>::msb)) & bits::tzmask(crlf))
             return -400;
@@ -191,7 +191,7 @@ namespace dhttp::Implementation
             if unlikely (not req_header_value(v, lf, cr, __crlf) or trim_whitespace<T>(in, value.pos, value.len))
                 return -400;
         }
-        for (u64_t col = simdv<N>::bitmask(simdv<N>::cmp_eq(v, v_col)); true; )
+        for (u64_t col = simdv<N>::cmp_eq(v, v_col).to_bitmask(); true; )
         {
             auto& name = out[out_reader.at()].name, &value = out[out_reader.at()].value;
             const u64_t first_col = bits::lsb(col);
