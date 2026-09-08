@@ -117,12 +117,21 @@ namespace dhttp::Implementation
             __incr = incr;
         }
 
-        u64_t set(u64_t i, u64_t incr) noexcept
+        int set(u64_t i) noexcept
         {
-            assert (i < __max);
-            assert (incr < __max);
+            if (i > __i or i > __max)
+                return -1;
+            __i = i;
+            return 0;
+        }
+
+        int set(u64_t i, u64_t incr) noexcept
+        {
+             if (i > __i or i > __max or incr > __max)
+                return -1;
             __incr = incr;
-            return __i = i;
+            __i = i;
+            return 0;
         }
 
         u64_t at(void) const noexcept
@@ -182,7 +191,7 @@ namespace dhttp::Implementation
         private:
         u64_t __i;
         u64_t __incr;
-        const static u64_t __max = std::numeric_limits<u64_t>::max();
+        const static u64_t __max = std::numeric_limits<u64_t>::max() - 1;
     };
 
     struct req_line
@@ -257,12 +266,19 @@ namespace dhttp::Implementation
         u16_t req_size(const u64_t (&req)[], const int i) const;
         bool  req_version_is_http_1(const void *ver_string);
         bool  req_version_tag(const u64_t (&req)[], const void *buf, const _req_type::req_index& i);
-        template <typename T, T out_size>
-        int parse(void *in, size_t in_size, req<T, out_size>& out);
+        template <typename T, T out_size, int N>
+        int parse(void *in, size_t in_size, req<T, out_size>& out, std::size_t run);
         template<int N>
         int parse_request_line(const void *in, const std::size_t size, const simdv<N>& v, u64_t& lf, u64_t& cr, u64_t& crlf);
         template <typename T, T out_size, int N>
         int parse_header(void *in, size_t in_size, req<T, out_size>& out, const simdv<N>& v, u64_t lf, u64_t cr, u64_t crlf);
+        template <typename T, T out_size>
+        int nparse(void *in, size_t in_size, req<T, out_size> &out);
+
+        inline bool parse_failed(int stat)
+        {
+            return stat < 0;
+        }
 
         // TODO
         inline bool incomplete_request_line(void)

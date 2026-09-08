@@ -227,31 +227,26 @@ namespace dhttp::Implementation
         return 0;
     }
 
-    template <typename T, T out_size>
-    int http::parse(void *in, size_t in_size, req<T, out_size> &out)
+    template <typename T, T out_size, int N>
+    inline int http::parse(void *in, size_t in_size, req<T, out_size> &out, std::size_t run_size)
     {
-        static_assert(std::is_integral_v(T) and sizeof(T) <= sizeof(u64_t));
-        static_assert(out_size > 0);
+        static_assert(N >= 32 and (N & 1) == 0);
 
-        if unlikely ((not in_reader.iszero() and in_size > in_reader.count()) or (not out_reader.iszero() and out_size > out_reader.count()))
-            return -400;
-        const std::size_t n = in_size / this->read_size; // align read/load size to 64
-
-        for (std::size_t j = 0; j < n; j += 64)
+        for (std::size_t j = 0; j < run_size; j += N)
         {
-            static const simdv v_lf = simdv<64>::splat('\xa');
-            static const simdv v_cr = simdv<64>::splat('\xd');
+            static const simdv v_lf = simdv<N>::splat('\xa');
+            static const simdv v_cr = simdv<N>::splat('\xd');
 
             u8_t *b = reinterpret_cast<u8_t *>(in) + j;
-            simdv<64> v = simd<64>::load(b);
+            simdv<N> v = simd<N>::load(b);
 
-            u64_t lf   = simdv<64>::bitmask(simdv<64>::cmp_eq(v, v_lf ));
-            u64_t cr   = simdv<64>::bitmask(simdv<64>::cmp_eq(v, v_cr ));
+            u64_t lf   = simdv<N>::cmp_eq(v, v_lf ).to_bitmask();
+            u64_t cr   = simdv<N>::cmp_eq(v, v_cr ).to_bitmask();
             u64_t crlf = cr & (lf << 1);
 
-            if (incomplete_request_line() and parse_request_line(in, size, v, lf, cr, crlf) < 0)
+            if (incomplete_request_line() and parse_request_line<N>(in, size, v, lf, cr, crlf) < 0)
                return -400;
-            if (completed_request_line() and parse_header<T, out_size>(in, in_size, out, v, lf, cr, crlf) < 0)
+            if (completed_request_line() and parse_header<T, out_size, N>(in, in_size, out, v, lf, cr, crlf) < 0)
                 return -400;
             
             if unlikely (crlf & crlf >> 2)
@@ -262,15 +257,38 @@ namespace dhttp::Implementation
                 if (('\xd' is b[-3]) && ('\xa' is b[-2]) && ('\xd' is b[-1]) && ('\xa' is b[0]))
                     return j + 4;
         }
-
-        u64_t re = in_size % this->read_size;
-        if (not re)
-            return 0;
-        u8_t b[64];
-        memcpy(b, in + n, re);
-        // TODO
-        simdv<64> safe_read = simd<64>::_and(simdv<64>::load(tables::mask_win[this->read_size - re]) & simdv<64>::load(reinterpret_cast<u8_t>(in) + in_size - re));
-
         return 0;
     }
+
+    template <typename T, T out_size>
+    int nparse(void *in, size_t in_size, req<T, out_size> &out)
+    {
+        static_assert(std::is_integral_v(T) and sizeof(T) <= sizeof(u64_t));
+        static_assert(out_size > 0);
+
+        if (in_reader.set(in_size) < 0 or out_reader.set(out_size) < 0)
+            return -400;
+  
+        const std::size_t n = in_size / 64; // read 64 bytes chunks
+        u64_t re = in_size % 64;
+        int stat = 0;
+
+        if (n)
+        {
+            stat = parse<T, out_size, 64>(in, in_size, out, n);
+            if unlikely (parse_failed(stat) or not re)
+                return stat;
+        }
+        // Handle trailing 32 bytes
+        if (re > 31)
+        {
+            stat = parse<T, out_size, 32>(in, in_size, out, n);
+            if unlikely (re %= 32; parse_failed(stat) or not re)
+                return stat;
+        }
+        // Trailing bytes < 31. safely copy to buffer and process
+        u8_t b[32];
+        memcpy(b, in + n, re);
+        // TODO
+        return stat;
 }
