@@ -1,8 +1,11 @@
 #pragma once
 #include "include/definition.hpp"
+#include "common/common.hpp"
 
-namespace dhttp::simd::westmere
+namespace dhttp::simd::fallback
 {
+    using namespace dhttp::common;
+
     template <int N> alignas(N) struct simdv;
 
     template<>
@@ -10,157 +13,147 @@ namespace dhttp::simd::westmere
     {
         static constexpr int size = 32;
 
-        __m128i lo, hi;
+        u64_t lo, xlo, hi, xhi;
 
+        simdv(void) {}
+        simdv(const simdv &v) : lo{v.lo},
+                                xlo{v.xlo},
+                                hi{v.hi},
+                                xhi{v.xhi} {}
+        simdv(u64_t w, u64_t x, u64_t y, u64_t z) : lo {w},
+                                                    xlo{x},
+                                                    hi {y},
+                                                    xhi{z} {}
 
-        simdv(const simdv& v)  : lo{v.lo}, hi{v.hi}{}
-        simdv(simdv&& v)       : lo{v.lo}, hi{v.hi}{}
-        simdv(__m128i u, __m128i v) : lo{u}, hi{v}{}
-
-        TARGET("sse4")
-        static inline simdv load(void *b)
+        
+        inline bool is_zero(void)
         {
-            return {_mm_loadu_si128(reinterpret_cast<__m128i *>(b)),
-                    _mm_loadu_si128(reinterpret_cast<__m128i *>(reinterpret_cast<u8_t *>(b) + 16))};
+            return static_cast<bool>(lo | xlo | hi | xhi);
         }
 
-        TARGET("sse4")
         inline u32_t to_bitmask(void)
         {
-
-            return static_cast<u32_t>(_mm_movemask_epi8(hi)) << 16 |
-                   _mm_movemask_epi8(lo);
+            const u32_t x = ((((lo * constant::compress) >> 48) & 0xff00ULL) | ((xlo * constant::compress) >> 56));
+            const u32_t y = ((((hi * constant::compress) >> 48) & 0xff00ULL) | ((xhi * constant::compress) >> 56));
+            return y << 16 | x;
         }
 
-        TARGET("sse4")
+        static inline simdv load(void *b)
+        {
+            simdv v;
+            if constexpr(__GNUC__)
+                __builtin_memcpy(&v, b, 32);
+            else
+                std::memcpy(&v, b, 32);
+            return v;
+        }
+
         static inline simdv splat(u8_t v)
         {
-            return {_mm_set1_epi8(v), _mm_set1_epi8(v)};
+            u64_t x = scalar::_dup(v);
+            return {x, x, x, x};
         }
 
-        TARGET("sse4")
+
         static inline u32_t bitmask(const simdv& v)
         {
-
-            return static_cast<u32_t>(_mm_movemask_epi8(v.hi)) << 16 |
-                   _mm_movemask_epi8(v.lo);
+            const u32_t x = ((((v.lo * constant::compress) >> 48) & 0xff00ULL) | ((v.xlo * constant::compress) >> 56));
+            const u32_t y = ((((v.hi * constant::compress) >> 48) & 0xff00ULL) | ((v.xhi * constant::compress) >> 56));
+            return y << 16 | x;
         }
 
-        TARGET("sse4")
         static inline simdv cmp_zero(const simdv& v)
         {
-            static __m128i z = _mm_setzero_si128();
-            return {_mm_cmpeq_epi8(v.lo, z),
-                    _mm_cmpeq_epi8(v.hi, z)};
+            return {scalar::_cmpeqz(v.lo ),
+                    scalar::_cmpeqz(v.xlo),
+                    scalar::_cmpeqz(v.hi ),
+                    scalar::_cmpeqz(v.xhi)};
         }
 
-        TARGET("sse4")
         static inline simdv cmp_eq(const simdv& u, const simdv& v)
         {
-            return {_mm_cmpeq_epi8(u.lo, v.lo),
-                    _mm_cmpeq_epi8(u.hi, v.hi)};
+            return {scalar::_cmpeq(u.lo,  v.lo ),
+                    scalar::_cmpeq(u.xlo, v.xlo),
+                    scalar::_cmpeq(u.hi,  v.hi ),
+                    scalar::_cmpeq(u.xhi, v.xhi)};
         }
 
-        TARGET("sse4")
         static inline simdv cmp_eq(const simdv& u, const simdv& v, const simdv& w)
         {
             return {
-                _mm_or_si128(_mm_cmpeq_epi8(u.lo, v.lo), _mm_cmpeq_epi8(u.lo, w.lo)),
-                _mm_or_si128(_mm_cmpeq_epi8(u.hi, v.hi), _mm_cmpeq_epi8(u.hi, w.hi)),
-            };
+                scalar::_cmpeq(u.lo, v.lo ) | scalar::_cmpeq(u.lo, w.lo ),
+                scalar::_cmpeq(u.lo, v.xlo) | scalar::_cmpeq(u.lo, w.xlo),
+                scalar::_cmpeq(u.lo, v.hi ) | scalar::_cmpeq(u.lo, w.hi ),
+                scalar::_cmpeq(u.lo, v.xhi) | scalar::_cmpeq(u.lo, w.xhi)};
         }
 
-        TARGET("sse4")
         static inline simdv cmp_gt(const simdv& v, u8_t a)
         {
-            __m128i x = _mm_set1_epi8(a);
-            return {_mm_cmpgt_epi8(v.lo, x),
-                    _mm_cmpgt_epi8(v.hi, x)};
+            u64_t x = scalar::_dup(a);
+            return {scalar::_cmpgt<0>(v.lo ),
+                    scalar::_cmpgt<0>(v.xlo),
+                    scalar::_cmpgt<0>(v.hi ),
+                    scalar::_cmpgt<0>(v.xhi)};
         }
 
-        TARGET("sse4")
         static inline simdv cmp_gt(const simdv& u, const simdv& v)
         {
-            return {_mm_cmpgt_epi8(u.lo, v.hi),
-                    _mm_cmpgt_epi8(u.hi, v.hi)};
+            return {0, 0, 0, 0};
         }
 
-        TARGET("sse4")
         static inline simdv cmp_lt(const simdv& v, u8_t a)
         {
-            __m128i x = _mm_set1_epi8(a);
-            return {_mm_cmpgt_epi8(v.lo, x),
-                    _mm_cmpgt_epi8(v.hi, x)};
+            u64_t x = scalar::_dup(a);
+            return {0, 0, 0, 0};
         }
 
-        TARGET("sse4")
         static inline simdv cmp_lt(const simdv& u, const simdv& v)
         {
-            return {_mm_cmplt_epi8(u.lo, v.hi),
-                    _mm_cmplt_epi8(u.hi, v.hi)};
+            return {0, 0, 0, 0};
         }
 
-        TARGET("sse4")
         static inline simdv gt_and_lt(const simdv& v, u8_t a, u8_t b)
         {
-            __m128i x = _mm_set1_epi8(a);
-            __m128i y = _mm_set1_epi8(b);
-            return {
-                _mm_and_si128(_mm_cmpgt_epi8(v.lo, x), _mm_cmplt_epi8(v.lo, y)),
-                _mm_and_si128(_mm_cmpgt_epi8(v.lo, x), _mm_cmplt_epi8(v.lo, y)),
-            };
+            u64_t x = scalar::_dup(a);
+            u64_t y = scalar::_dup(b);
+            return {0, 0, 0, 0};
         }
 
-        TARGET("sse4")
         static inline simdv gt_and_lt(const simdv& u, const simdv& v, const simdv& w)
         {
-            return {
-                _mm_and_si128(_mm_cmpgt_epi8(u.lo, v.lo), _mm_cmplt_epi8(u.lo, w.lo)),
-                _mm_and_si128(_mm_cmpgt_epi8(u.lo, v.hi), _mm_cmplt_epi8(u.lo, w.hi)),
-            };
+            return {0, 0, 0, 0};
         }
 
-        TARGET("sse4")
         static inline simdv _and(const simdv& u, const simdv& v)
         {
-            return {_mm_and_si128(u.lo, v.lo),
-                    _mm_and_si128(u.hi, v.hi)};
+            return {u.lo  & v.lo,
+                    u.xlo & v.xlo,
+                    u.hi  & v.hi,
+                    u.xhi & v.xhi};
         }
 
-        TARGET("sse4")
         static inline simdv _or(const simdv& u, const simdv& v)
         {
-            return {_mm_or_si128(u.lo, v.lo),
-                    _mm_or_si128(u.hi, v.hi)};
+            return {u.lo  | v.lo,
+                    u.xlo | v.xlo,
+                    u.hi  | v.hi,
+                    u.xhi | v.xhi};
         }
 
-        TARGET("sse4")
         static inline simdv lshift(const simdv& u, int r)
         {
-            return {_mm_srli_si128(u.lo, r),
-                    _mm_srli_si128(u.hi, r)};
+            return {0, 0, 0, 0};
         }
 
-        TARGET("sse4")
         static inline bool is_zero(const simdv& u)
         {
-#ifdef HAVE__SSE4_2__
-            return _mm_test_all_zeros(u.lo, u.lo) or _mm_test_all_zeros(u.hi, u.hi);
-#else
-            return static_cast<bool>(bitmask(cmp_zero(u)));
-#endif
+            return static_cast<bool>(u.lo | u.xlo | u.hi | u.xhi);
         }
 
-#if HAVE__SSSE3__
-#define HAVE_SHUFFLE__ 1
-        static inline simdv shuffle(const simdv& u, const simdv& x)
+        static inline simdv shuffle(const simdv &u, const simdv &x)
         {
-            return {_mm_shuffle_epi8(u.lo, x.lo),
-                    _mm_shuffle_epi8(u.hi, x.hi)};
+            return {0, 0, 0, 0};
         }
-#else
-        [[gnu::unused]] static inline simdv shuffle(const simdv& u, const simdv& x){}
-#endif
     };
 
     template<>
@@ -170,48 +163,46 @@ namespace dhttp::simd::westmere
     
         simdv<32> lo, hi;
 
-        TARGET("sse4")
+        
+        inline bool is_zero(void)
+        {
+            return lo.is_zero() or hi.is_zero();
+        }
+
+        inline u32_t to_bitmask(void)
+        {
+            return hi.to_bitmask() << 32 | lo.to_bitmask();
+        }
+
         make_flat static inline simdv load(void *b)
         {
             return {simdv<32>::load(reinterpret_cast<__m128i *>(b)),
                     simdv<32>::load(reinterpret_cast<__m128i *>(reinterpret_cast<u8_t *>(b) + 32))};
         }
 
-        TARGET("sse4")
         make_flat static inline simdv splat(u8_t v)
         {
             return {simdv<32>::splat(v), simdv<32>::splat(v)};
         }
 
-         TARGET("sse4")
-        make_flat inline u64_t to_bitmask(void)
+        make_flat static inline u64_t bitmask(const simdv& x)
         {
 
-            return static_cast<u64_t>(hi.to_bitmask()) << 32 | lo.to_bitmask();
+            return static_cast<u64_t>(simdv<32>::bitmask(x.hi)) << 32 | simdv<32>::bitmask(x.lo);
         }
 
-        TARGET("sse4")
-        make_flat static inline u64_t bitmask(const simdv& v)
-        {
-
-            return static_cast<u64_t>(simdv<32>::bitmask(v.hi)) << 32 | simdv<32>::bitmask(v.lo);
-        }
-
-        TARGET("sse4")
         make_flat static inline simdv cmp_zero(const simdv& v)
         {
             return {simdv<32>::cmp_zero(v.lo),
                     simdv<32>::cmp_zero(v.hi)};
         }
 
-        TARGET("sse4")
         make_flat static inline simdv cmp_eq(const simdv& u, const simdv& v)
         {
             return {simdv<32>::cmp_eq(u.lo, v.lo),
                     simdv<32>::cmp_eq(u.hi, v.hi)};
         }
 
-        TARGET("sse4")
         make_flat static inline simdv cmp_eq(const simdv& u, const simdv& v, const simdv& w)
         {
             return {
@@ -220,34 +211,29 @@ namespace dhttp::simd::westmere
             };
         }
 
-        TARGET("sse4")
         make_flat static inline simdv cmp_gt(const simdv& v, u8_t a)
         {
             simdv<32> x = simdv<32>::splat(a);
             return {simdv<32>::cmp_eq(v.lo, x), simdv<32>::cmp_eq(v.hi, x)};
         }
 
-        TARGET("sse4")
         make_flat static inline simdv cmp_gt(const simdv& u, const simdv& v)
         {
             return {simdv<32>::cmp_gt(u.lo, v.hi),
                     simdv<32>::cmp_gt(u.hi, v.hi)};
         }
 
-        TARGET("sse4")
         make_flat static inline simdv cmp_lt(const simdv& v, u8_t a)
         {
             simdv<32> x = simdv<32>::splat(a);
             return {simdv<32>::cmp_lt(v.lo, x), simdv<32>::cmp_lt(v.hi, x)};
         }
 
-        TARGET("sse4")
         make_flat static inline simdv cmp_lt(const simdv& u, const simdv& v)
         {
             return {simdv<32>::cmp_lt(v.lo, v.lo), simdv<32>::cmp_lt(v.hi, v.hi)};
         }
 
-        TARGET("sse4")
         make_flat static inline simdv gt_and_lt(const simdv& v, u8_t a, u8_t b)
         {
             simdv<32> x = simdv<32>::splat(a);
@@ -258,7 +244,6 @@ namespace dhttp::simd::westmere
             };
         }
 
-        TARGET("sse4")
         make_flat static inline simdv gt_and_lt(const simdv& u, const simdv& v, const simdv& w)
         {
              return {
@@ -267,41 +252,31 @@ namespace dhttp::simd::westmere
             };
         }
 
-        TARGET("sse4")
         make_flat static inline simdv andl(const simdv&u, simdv &v)
         {
             return {simdv<32>::_and(u.lo, v.lo), simdv<32>::_and(u.hi, v.hi)};
         }
 
-        TARGET("sse4")
         make_flat static inline simdv orl(const simdv& u, const simdv& v)
         {
             return {simdv<32>::_or(u.lo, v.lo),
                     simdv<32>::_or(u.hi, v.hi)};
         }
 
-        TARGET("sse4")
         make_flat static inline simdv lshift(const simdv& u, int r)
         {
             return {simdv<32>::lshift(u.lo, r),
                     simdv<32>::lshift(u.hi, r)};
         }
 
-        TARGET("sse4")
         make_flat static inline bool is_zero(const simdv& u)
         {
-             return static_cast<bool>(bitmask(cmp_zero(u)));
+             return simdv<32>::is_zero(u.lo) or simdv<32>::is_zero(u.hi);
         }
 
-#if HAVE__SSSE3__
-#define HAVE_SHUFFLE__ 1
-        make_flat static inline simdv shuffle(const simdv& u, const simdv& v)
+        make_flat static inline simdv shuffle(const simdv& u, const simdv& x)
         {
-            return {simdv<32>::shuffle(u.lo, v.lo),
-                    simdv<32>::shuffle(u.hi, v.hi)};
+            return {simdv<32>(0, 0, 0, 0), simdv<32>(0, 0, 0, 0)};
         }
-#else
-        [[gnu::unused]] make_flat static inline simdv shuffle(const simdv& u, const simdv& x){}
-#endif
     };
 }

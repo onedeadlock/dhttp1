@@ -11,6 +11,22 @@
 #define isnot !=
 #define not(x) (!(x))
 
+#ifndef __GNUC__
+#    define __GNUC__ 0
+#endif
+
+#ifndef __clang__
+#    define __clang__ 0
+#endif
+
+#if __GNUC__ || __clang__
+#    undef  __HAVE_GNUC__
+#    define __HAVE_GNUC__ __GNUC__
+#elif defined(_MSC_VER)
+#    undef  __HAVE_MSVC__
+#    define __HAVE_MSVC__ _MSC_VER
+#endif
+
 #if defined(__AVX2__) || defined(__SSSE3__) || defined(__SSE4_2__) || defined(__SSE2__)
 #    if defined(__AVX2__)
 #        define HAVE__AVX2__   1
@@ -50,14 +66,8 @@
 /////////////////////////////////////
 /////////////////////////////////////
 
-#if defined(__GNUC__) || (defined(__clang__) && !defined(_MSC_VER))
-#    define HAVE_GNUC_C__ 1
-#elif defined(_MSC_VER)
-#    define HAVE_MSVC_C__ 1
-#endif
-
 // branch prediction
-#if HAVE_GNUC_C__
+#if __HAVE_GNUC__
 #    define likely(x)   (__builtin_expect(!!(x), 1))
 #    define unlikely(x) (__builtin_expect(!!(x), 0))
 #elif defined(__cplusplus) && __cplusplus >= 202002L
@@ -69,10 +79,10 @@
 #endif
 
 // inline
-#if   HAVE_GNUC_C__
+#if   __HAVE_GNUC__
 #    define inline    __attribute__((__always_inline__)) inline
 #    define make_flat __attribute__((flatten))
-#elif HAVE_MSVC_C__
+#elif __HAVE_MSVC__
 #    define inline  [[msvc::forceinline]]
 #    define make_flat 
 #else
@@ -81,7 +91,7 @@
 #endif
 
 // target
-#if HAVE_GNUC_C__
+#if __HAVE_GNUC__
 #    define TARGET(str) __attribute((target(str)))
 #else
 #    define TARGET(str) 

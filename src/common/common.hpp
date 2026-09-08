@@ -7,15 +7,17 @@ namespace dhttp::common::constant
     static constexpr std::size_t max_int_size   = sizeof (umax_t);
     static constexpr std::size_t max_int_size_p = (max_int_size / 2) - 1;
 
-    constexpr umax_t c7f = 0x7f7f7f7f7f7f7f7fULL;
-    constexpr umax_t cff = 0xffffffffffffffffULL;
-    constexpr umax_t c80 = 0x8080808080808080ULL;
-    constexpr umax_t c01 = 0x0101010101010101ULL;
-    constexpr umax_t c09 = 0x0909090909090909ULL;
-    constexpr umax_t c20 = 0x2020202020202020ULL;
-    constexpr umax_t c30 = 0x3030303030303030ULL;
-    constexpr umax_t cdf = 0xdfdfdfdfdfdfdfdfULL;
-    
+    constexpr u64_t c7f = 0x7f7f7f7f7f7f7f7fULL;
+    constexpr u64_t cff = 0xffffffffffffffffULL;
+    constexpr u64_t c80 = 0x8080808080808080ULL;
+    constexpr u64_t c01 = 0x0101010101010101ULL;
+    constexpr u64_t c09 = 0x0909090909090909ULL;
+    constexpr u64_t c20 = 0x2020202020202020ULL;
+    constexpr u64_t c30 = 0x3030303030303030ULL;
+    constexpr u64_t cdf = 0xdfdfdfdfdfdfdfdfULL;
+
+    constexpr u64_t compress = 0x0002040810204081ULL;
+
     constexpr umax_t msb_64  = 0x8000000000000000ULL;
     constexpr umax_t max_c7f = UMAX_C(c7f) << 64 | c7f;
     constexpr umax_t max_cff = UMAX_C(cff) << 64 | cff;
@@ -47,6 +49,9 @@ namespace dhttp::common::constant
 
 namespace dhttp::common::scalar
 {
+    #if __GNUC__
+    #endif
+
     inline constexpr umax_t _dup(u8_t v)
     {
         return UMAX(v) * constant::max_c01;

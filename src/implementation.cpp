@@ -124,7 +124,7 @@ namespace dhttp::Implementation
     {
         static simdv<N> sp   = simdv<N>::splat('\x20');
         static simdv<N> htab = simdv<N>::splat('\x9' );
-        bool is_valid = simdv<N>::is_zero(simdv<64>::_or(simdv<64>::gt_or_lt(v, '\x19', '\x7f'), simdv<64>::_or(simdv<64>::sign(v), simdv::cmpeq(v, htab))));
+        bool is_valid = simdv<N>::is_zero(simdv<N>::_or(simdv<N>::gt_or_lt(v, '\x19', '\x7f'), simdv<N>::_or(simdv<N>::sign(v), simdv::cmpeq(v, htab))));
         return not is_valid and ((cr & constant::msb_64 | lf) and crlf);
     }
 
