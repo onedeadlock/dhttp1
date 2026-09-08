@@ -150,7 +150,7 @@ namespace dhttp::Implementation
         const u64_t wsp   = ~static_cast<const u64_t>(has_trailing_whitespace()) & bits::trim(sp); // valid whitespace
         const u64_t tchar = simdv<N>::bitmask(simdv<N>::gt_or_lt(v, '\x20', '\x7f')) | wsp;
 
-        if (auto has_any_rejected_token = (~tchar | lf | (cr & ~constant::msb_64)) & bits::tzmask(crlf))
+        if (auto has_any_rejected_token = (~tchar | lf | (cr & ~simd<N>::msb)) & bits::tzmask(crlf))
             return -400;
         this->unused = false;
         u64_t mask = sp | cr | lf;
@@ -159,8 +159,8 @@ namespace dhttp::Implementation
 
         if not (crlf)
         {
-            set_trailing_ret(static_cast<bool>(cr & constant::msb_64));
-            set_trailing_whitespace(static_cast<bool>(sp & constant::msb_64));
+            set_trailing_ret(static_cast<bool>(cr & simd<N>::msb));
+            set_trailing_whitespace(static_cast<bool>(sp & simd<N>::msb));
             return in_reader.incr(), 0;
         }
         mask &= bits::tzmask(crlf), crlf &= mask, lf &= mask, cr &= mask;
@@ -230,14 +230,15 @@ namespace dhttp::Implementation
     template <typename T, T out_size, int N>
     inline int http::parse(void *in, size_t in_size, req<T, out_size> &out, std::size_t run_size)
     {
+        // nly handle 32 and 64 byte chunks
         static_assert(N >= 32 and (N & 1) == 0);
 
-        for (std::size_t j = 0; j < run_size; j += N)
+        for (std::size_t j = 0; j < run_size; j += 1)
         {
             static const simdv v_lf = simdv<N>::splat('\xa');
             static const simdv v_cr = simdv<N>::splat('\xd');
 
-            u8_t *b = reinterpret_cast<u8_t *>(in) + j;
+            u8_t *b = reinterpret<u8_t *>(reinterpret_cast<u64_t *>(in) + j);
             simdv<N> v = simd<N>::load(b);
 
             u64_t lf   = simdv<N>::cmp_eq(v, v_lf ).to_bitmask();
@@ -250,12 +251,12 @@ namespace dhttp::Implementation
                 return -400;
             
             if unlikely (crlf & crlf >> 2)
-                return j + bits::tzcnt(crlf & crlf >> 2);
+                return j * N + bits::tzcnt(crlf & crlf >> 2);
             
             // handle any crlf carry
             if unlikely ((lf | cr) & 0xe000000000000000ull)
                 if (('\xd' is b[-3]) && ('\xa' is b[-2]) && ('\xd' is b[-1]) && ('\xa' is b[0]))
-                    return j + 4;
+                    return j * N + 4;
         }
         return 0;
     }
@@ -266,7 +267,7 @@ namespace dhttp::Implementation
         static_assert(std::is_integral_v(T) and sizeof(T) <= sizeof(u64_t));
         static_assert(out_size > 0);
 
-        if (in_reader.set(in_size) < 0 or out_reader.set(out_size) < 0)
+        if (in_reader.set(in_size, 64) < 0 or out_reader.set(out_size) < 0)
             return -400;
   
         const std::size_t n = in_size / 64; // read 64 bytes chunks
@@ -282,13 +283,16 @@ namespace dhttp::Implementation
         // Handle trailing 32 bytes
         if (re > 31)
         {
-            stat = parse<T, out_size, 32>(in, in_size, out, n);
+            in_reader.set_incr(32);
+            stat = parse<T, out_size, 32>(in, in_size, out, 1);
             if unlikely (re %= 32; parse_failed(stat) or not re)
                 return stat;
         }
         // Trailing bytes < 31. safely copy to buffer and process
         u8_t b[32];
         memcpy(b, in + n, re);
+        // place the last re::byte in b[last]
+        b[32] = b[re - 1]; 
         // TODO
         return stat;
 }

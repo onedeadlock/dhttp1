@@ -117,21 +117,27 @@ namespace dhttp::Implementation
             __incr = incr;
         }
 
-        int set(u64_t i) noexcept
-        {
-            if (i > __i or i > __max)
-                return -1;
-            __i = i;
-            return 0;
-        }
 
-        int set(u64_t i, u64_t incr) noexcept
+        int set(u64_t i, u64_t incr=1) noexcept
         {
              if (i > __i or i > __max or incr > __max)
                 return -1;
             __incr = incr;
             __i = i;
             return 0;
+        }
+
+        inline int set_incr(u64_t incr) noexcept
+        {
+            if (incr < __max)
+                return -1;
+            __incr = incr;
+            return 0;
+        }
+
+        inline u64_t get_incr(void) const noexcept
+        {
+            return __incr;
         }
 
         u64_t at(void) const noexcept
@@ -147,11 +153,6 @@ namespace dhttp::Implementation
         u64_t iszero(void) const noexcept
         {
             return __i == 0;
-        }
-
-        inline u64_t get_incr(void) const noexcept
-        {
-            return __incr;
         }
 
         inline u64_t incr_by(u64_t i) noexcept
