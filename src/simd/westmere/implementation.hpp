@@ -1,15 +1,17 @@
 #pragma once
-#include "include/definition.hpp"
+#include "../../include/definition.hpp"
 
 namespace dhttp::simd::westmere
 {
+    using namespace common;
     template <int N> alignas(N) struct simdv;
 
     template<>
     alignas(32) struct simdv<32>
     {
         static constexpr int size = 32;
-        static constexpr u64_t msb = common::constant::msb_32;
+        static constexpr u64_t msb  = common::constant::msb_32;
+        static constexpr u64_t msb3 = common::constant::msb3_32;
 
         __m128i lo, hi;
 
@@ -174,7 +176,8 @@ namespace dhttp::simd::westmere
     alignas(64) struct simdv<64>
     {
         static constexpr int size = 64;
-        static constexpr u64_t msb = common::constant::msb_64;
+        static constexpr u64_t msb  = common::constant::msb_64;
+        static constexpr u64_t msb3 = common::constant::msb3_32;
     
         simdv<32> lo, hi;
 
@@ -282,13 +285,13 @@ namespace dhttp::simd::westmere
         }
 
         TARGET("sse4")
-        make_flat static inline simdv andl(const simdv&u, simdv &v)
+        make_flat static inline simdv _and(const simdv&u, simdv &v)
         {
             return {simdv<32>::_and(u.lo, v.lo), simdv<32>::_and(u.hi, v.hi)};
         }
 
         TARGET("sse4")
-        make_flat static inline simdv orl(const simdv& u, const simdv& v)
+        make_flat static inline simdv _or(const simdv& u, const simdv& v)
         {
             return {simdv<32>::_or(u.lo, v.lo),
                     simdv<32>::_or(u.hi, v.hi)};

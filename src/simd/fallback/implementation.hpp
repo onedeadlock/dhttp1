@@ -1,17 +1,19 @@
 #pragma once
-#include "include/definition.hpp"
-#include "common/common.hpp"
+#include "../../include/definition.hpp"
+#include "../../common/common.hpp"
 
 namespace dhttp::simd::fallback
 {
-    using namespace dhttp::common;
+    using namespace common;
 
     template <int N> alignas(N) struct simdv;
 
     template<>
     alignas(32) struct simdv<32>
     {
-        static constexpr int size = 32;
+        static constexpr int size   = 32;
+        static constexpr u64_t msb  = common::constant::msb_32;
+        static constexpr u64_t msb3 = common::constant::msb3_32;
 
         u64_t lo, xlo, hi, xhi;
 
@@ -40,12 +42,17 @@ namespace dhttp::simd::fallback
 
         static inline simdv load(void *b)
         {
+            #ifdef LOAD_MEMCPY
             simdv v;
             if constexpr(__GNUC__)
                 __builtin_memcpy(&v, b, 32);
             else
                 std::memcpy(&v, b, 32);
             return v;
+            #else
+            u64_t *v = reinterpret_cast<u64_t *>(b);
+            return {v[0], v[1], v[2], v[4]};
+            #endif
         }
 
         make_flat static inline simdv splat(u8_t v)
@@ -57,8 +64,8 @@ namespace dhttp::simd::fallback
 
         static inline u64_t bitmask(const simdv& v)
         {
-            const u32_t x = ((((v.lo * constant::compress) >> 48) & 0xff00ULL) | ((v.xlo * constant::compress) >> 56));
-            const u32_t y = ((((v.hi * constant::compress) >> 48) & 0xff00ULL) | ((v.xhi * constant::compress) >> 56));
+            const u32_t x = ((((v.xlo * constant::compress) >> 48) & 0xff00ULL) | ((v.lo * constant::compress) >> 56));
+            const u32_t y = ((((v.xhi * constant::compress) >> 48) & 0xff00ULL) | ((v.hi * constant::compress) >> 56));
             return y << 16 | x;
         }
 
@@ -159,7 +166,9 @@ namespace dhttp::simd::fallback
     template<>
     alignas(64) struct simdv<64>
     {
-        static constexpr int size = 64;
+        static constexpr int size   = 64;
+        static constexpr u64_t msb  = common::constant::msb_64;
+        static constexpr u64_t msb3 = common::constant::msb3_64;
     
         simdv<32> lo, hi;
 
@@ -176,13 +185,23 @@ namespace dhttp::simd::fallback
 
         make_flat static inline simdv load(void *b)
         {
-            return {simdv<32>::load(reinterpret_cast<__m128i *>(b)),
-                    simdv<32>::load(reinterpret_cast<__m128i *>(reinterpret_cast<u8_t *>(b) + 32))};
+            #ifdef LOAD_MEMCPY
+            simdv v;
+            if constexpr(__GNUC__)
+                __builtin_memcpy(&v, b, 64);
+            else
+                std::memcpy(&v, b, 64);
+            return v;
+            #else
+            u64_t *v = reinterpret_cast<u64_t *>(b);
+            return {{v[0], v[1], v[2], v[4]}, {v[0], v[1], v[2], v[4]}};
+            #endif
         }
 
         make_flat static inline simdv splat(u8_t v)
         {
-            return {simdv<32>::splat(v), simdv<32>::splat(v)};
+            simdv<32> x = simdv<32>::splat(v);
+            return {x, x};
         }
 
         make_flat static inline u64_t bitmask(const simdv& x)
@@ -214,7 +233,7 @@ namespace dhttp::simd::fallback
         make_flat static inline simdv cmp_gt(const simdv& v, u8_t a)
         {
             simdv<32> x = simdv<32>::splat(a);
-            return {simdv<32>::cmp_eq(v.lo, x), simdv<32>::cmp_eq(v.hi, x)};
+            return {simdv<32>::cmp_gt(v.lo, x), simdv<32>::cmp_gt(v.hi, x)};
         }
 
         make_flat static inline simdv cmp_gt(const simdv& u, const simdv& v)
@@ -252,12 +271,12 @@ namespace dhttp::simd::fallback
             };
         }
 
-        make_flat static inline simdv andl(const simdv&u, simdv &v)
+        make_flat static inline simdv _and(const simdv&u, simdv &v)
         {
             return {simdv<32>::_and(u.lo, v.lo), simdv<32>::_and(u.hi, v.hi)};
         }
 
-        make_flat static inline simdv orl(const simdv& u, const simdv& v)
+        make_flat static inline simdv _or(const simdv& u, const simdv& v)
         {
             return {simdv<32>::_or(u.lo, v.lo),
                     simdv<32>::_or(u.hi, v.hi)};

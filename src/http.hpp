@@ -109,12 +109,11 @@ namespace dhttp::Implementation
     };
 
     struct Reader {
-        Reader(u64_t i=0, u64_t incr=1, u64_t max=std::numeric_limits<u64_t>::max() - 1) noexcept
+        Reader(u64_t max=std::numeric_limits<u64_t>::max()-1, u64_t incr=1) noexcept
         {
-            assert (i    < __max);
-            assert (incr < __max);
             assert (max  < std::numeric_limits<u64_t>::max());
-            __i    = i;
+            assert (incr < __max);
+            __i    = 0;
             __incr = incr;
             __max  = max;
         }
@@ -194,7 +193,7 @@ namespace dhttp::Implementation
         private:
         u64_t __i;
         u64_t __incr;
-        u64_t __max = std::numeric_limits<u64_t>::max() - 1;
+        u64_t __max;
     };
 
     struct req_line
@@ -208,18 +207,6 @@ namespace dhttp::Implementation
             [0]  NULL     | NULL
         */
         u64_t req_line[4];
-    };
-
-    struct req_state
-    {
-        u64_t pos           = 0; // absolute index of last byte parsed
-        u64_t j             = 3; // request line field count (0, 3)
-        bool  trailing_sp   = 0; // carry of trailing sp
-        bool  trailing_cr   = 0;
-        bool  req_line      = 0; // request line
-        bool  no_init       = 1; // true if decoding of request/status-line is pending (not started)
-        bool  pending_name  = 0;
-        bool  pending_value = 0;
     };
 
     struct _req_type
@@ -248,8 +235,9 @@ namespace dhttp::Implementation
         http()
             : req_type(_req_type::type::request),
               out_reader(3),
-              in_reader(0, read_size),
+              in_reader(),
               version(-1),
+              n_bytes_to_complete(0),
               state(0),
               unused(true) {}
 
@@ -257,10 +245,11 @@ namespace dhttp::Implementation
         /// READ SIZE
         static constexpr unsigned int read_size = 64;
 
-        _req_type::type req_type;
         req_line reqline;
         Reader out_reader, in_reader;
-        int version;
+        _req_type::type req_type;
+        int  version;
+        int  n_bytes_to_complete;
         u8_t state;
         bool unused;
 
@@ -270,7 +259,7 @@ namespace dhttp::Implementation
         bool  req_version_is_http_1(const void *ver_string);
         bool  req_version_tag(const u64_t (&req)[], const void *buf, const _req_type::req_index& i);
         template <typename T, T out_size, int N>
-        int parse(void *in, size_t in_size, req<T, out_size>& out, std::size_t run);
+        int parse(void *in, size_t in_size, req<T, out_size>& out, std::size_t run_size, std::size_t rem);
         template<int N>
         int parse_request_line(const void *in, const std::size_t size, const simdv<N>& v, u64_t& lf, u64_t& cr, u64_t& crlf);
         template <typename T, T out_size, int N>
@@ -281,6 +270,11 @@ namespace dhttp::Implementation
         inline bool parse_failed(int stat)
         {
             return stat < 0;
+        }
+
+        inline bool expect_end_of_parse_char(int eop)
+        {
+            return n_bytes_to_complete;
         }
 
         // TODO
@@ -300,6 +294,11 @@ namespace dhttp::Implementation
         }
 
         inline void set_pending_value(void)
+        {
+            state = 0;
+        }
+
+        inline void unset_pending_value(void)
         {
             state = 0;
         }

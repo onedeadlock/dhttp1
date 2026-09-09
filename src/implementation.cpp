@@ -106,13 +106,13 @@ namespace dhttp::Implementation
     }
 
     template <typename T>
-    inline bool trim_whitespace(void *b, T &pos, T &len)
+    make_flat inline bool trim_whitespace(void *b, T &pos, T &len)
     {
         static_assert(sizeof(T) <= sizeof(u64_t));
         void *bv = reinterpret_cast<u8_t *>(b) + pos;
         std::size_t t_pos = rcount_whitespace(bv, static_cast<u64_t>(len));
 
-        if unlikely (t_pos == len)
+        if (t_pos == len) [[unlikely]]
             return 1; // all whitespace
         pos += t_pos;
         len -= lcount_whitespace(bv, static_cast<u64_t>(len));
@@ -134,9 +134,9 @@ namespace dhttp::Implementation
         static const simdv<N> vsp   = simdv<N>::splat('\x20');
         static const simdv<N> vhtab = simdv<N>::splat('\x9' );
 
-        if unlikely ((crlf & 0x02) and this->unused)
-            return  ((crlf & crlf >> 2) & 0x04) ? -400 /* empty request */ : -400 /* blank line */;
-        if unlikely (has_trailing_ret())
+        if ((crlf & 0x02) and this->unused) [[unlikely]]
+            return  ((crlf & crlf >> 2) & 0x04) ? -400 /* empty request */ : -400 /* blank line TODO: skip */;
+        if (has_trailing_ret()) [[unlikely]]
         {
             if not (lf & 0x01)
                 return -400;
@@ -153,7 +153,7 @@ namespace dhttp::Implementation
         if (auto has_any_rejected_token = (~tchar | lf | (cr & ~simd<N>::msb)) & bits::tzmask(crlf))
             return -400;
         this->unused = false;
-        for (u64_t umask = (sp |cr | lf) & bits::blsmask(cr | lf); umask and out_reader.count(); umask &= umask - 1)
+        for (u64_t umask = (sp |cr | lf) & bits::blsmask(cr | lf); umask and not out_reader.is_zero(); umask &= umask - 1)
             reqline.req_line[out_reader.decr()] = in_reader.at() + bits::tzcnt(umask);
 
         if not (crlf)
@@ -165,7 +165,7 @@ namespace dhttp::Implementation
         crlf &= crlf - 1;
         in_reader.incr_by(reqline.req_line[out_reader.at() + 1] + 2); // +2 for cr and lf
         completed_request_line();
-        return -(out_reader.iszero() or (req_version_tag(reqline.req_line, in, _req_type::index[req_type]) isnot http_1));
+        return -(out_reader.iszero() or (req_version_tag(reqline.req_line, in, _req_type::index[this->req_type]) isnot http_1));
     }
 
     template <typename T, T out_size, int N>
@@ -185,9 +185,10 @@ namespace dhttp::Implementation
             auto& value = out[out_reader.at()].value;
             if not (crlf)
                 return in_reader.incr(), req_header_value(v);
-            set_header(value, out[out_reader.incr()].name, state.pos, crlf, 2);
+            set_header(value, out[out_reader.incr()].name, in_reader.at(), crlf, 2);
             crlf &= crlf - 1;
-            if unlikely (not req_header_value(v, lf, cr, __crlf) or trim_whitespace<T>(in, value.pos, value.len))
+            unset_pending_value();
+            if not (req_header_value(v, lf, cr, __crlf) or trim_whitespace<T>(in, value.pos, value.len)) [[unlikely]]
                 return -400;
         }
         for (u64_t col = simdv<N>::cmp_eq(v, v_col).to_bitmask(); true; )
@@ -196,44 +197,39 @@ namespace dhttp::Implementation
             const u64_t first_col = bits::lsb(col);
 
             if constexpr (not OPTIMIZE_FOR_MOST_CASE)
-                if unlikely (crlf and bits::lsb(crlf) < bits::lsb(col))
+                if (crlf and bits::lsb(crlf) < bits::lsb(col)) [[unlikely]]
                     return -400;
             if not (col)
                 return in_reader.incr();
+            // set position and length of name
             set_header(name, value, in_reader.at(), col, 1);
             if not (crlf)
-                return in_reader.incr(), req_header_value(v);
+            {
+                set_pending_value();
+                in_reader.incr();
+                return req_header_value(v);
+            }
+            // set position and length of value
             set_header(value, out[out_reader.incr()].name, in_reader.at(), crlf & bits::xlsfill(first_col), 2);
             col  &= bits::xlsfill(crlf);
             crlf &= crlf - 1;
             bool all_wsp = trim_whitespace<T>(in, value.pos, value.len);
-            if unlikely (all_wsp or not req_header_name(in, name.len) or not req_header_value(v, lf, cr, __crlf, 0))
+            if (all_wsp or not req_header_name(in, name.len) or not req_header_value(v, lf, cr, __crlf, 0)) [[unlikely]]
                 return -400;
         }
         in_reader.incr();
         return 0;
     }
 
-    inline bool is_end_of_parse(void *in, u64_t cr_lf)
-    {
-        // TODO
-        u8_t *b = reinterpret_cast<u8_t *>(in);
-        if unlikely (cr_lf & 0xe000000000000000ull)
-        {
-                if (('\xd' is b[-3]) && ('\xa' is b[-2]) && ('\xd' is b[-1]) && ('\xa' is b[0]))
-                    return true;
-        }
-        return 0;
-    }
-
     template <typename T, T out_size, int N>
-    inline int http::parse(void *in, size_t in_size, req<T, out_size> &out, std::size_t run_size)
+    inline int http::parse(void *in, size_t in_size, req<T, out_size> &out, std::size_t run_size, std::size_t rem)
     {
         // nly handle 32 and 64 byte chunks
         static_assert(N >= 32 and (N & 1) == 0);
 
-        for (std::size_t j = 0; j < run_size; j += 1)
-        {
+        std::size_t j = 0;
+        bool run = true;
+        do {
             static const simdv v_lf = simdv<N>::splat('\xa');
             static const simdv v_cr = simdv<N>::splat('\xd');
 
@@ -244,24 +240,34 @@ namespace dhttp::Implementation
             u64_t cr   = simdv<N>::cmp_eq(v, v_cr ).to_bitmask();
             u64_t crlf = cr & (lf << 1);
 
-            if (incomplete_request_line() and parse_request_line<N>(in, size, v, lf, cr, crlf) < 0)
+            if (incomplete_request_line() and parse_request_line<N>(in, size, v, lf, cr, crlf) < 0) [[unlikely]]
                return -400;
             if (completed_request_line() and parse_header<T, out_size, N>(in, in_size, out, v, lf, cr, crlf) < 0)
                 return -400;
             
-            if unlikely (crlf & crlf >> 2)
-                return j * N + bits::tzcnt(crlf & crlf >> 2);
-            
-            // handle any crlf carry
-            if unlikely ((lf | cr) & 0xe000000000000000ull)
-                if (('\xd' is b[-3]) && ('\xa' is b[-2]) && ('\xd' is b[-1]) && ('\xa' is b[0]))
-                    return j * N + 4;
-        }
+            // maybe the end of us parsing this buffer (eop)
+            if (auto eop = crlf & crlf >> 2)
+                return j * N - (N - bits::tzcnt(eop));
+            // incr
+            run = ++j < run_size;
+            // or maybe eop is incomplete: like cr, crlf, crlfcr
+            if (auto eop = (lf | cr) & simdv<N>::msb3) [[unlikely]]
+            {
+                // the top three bits of intN in the eop mask can either be 100, 110 or 111
+                // in each case tab[top_three_bits_in_eop] gives us the number of bytes we need to check
+                // also tab[tab[last_three_bits_in_eop]] gives the number of times we need to shift backward in order to read a complete crlfcrlf word
+                static constexpr eop_tab[8]{0, 2, 1, 0, 3, 0, 2, 1};
+                int n = eop_tab[eop_tab >> N - 3];
+                if (run or rem >= n) [[likely]]
+                    return -((reinterpret_cast<u32_t *>(in) + (j - 1) * N - eop_tab[n])[0] == 0xd0a0d0a);
+                return -(this->n_bytes_to_complete = n);  // we need atleast <= 3 bytes to confirm an exact eop
+            }
+        } while (run);
         return 0;
     }
 
     template <typename T, T out_size>
-    int nparse(void *in, size_t in_size, req<T, out_size> &out)
+    int http::nparse(void *in, size_t in_size, req<T, out_size> &out)
     {
         static_assert(std::is_integral_v(T) and sizeof(T) <= sizeof(u64_t));
         static_assert(out_size > 0);
@@ -270,29 +276,30 @@ namespace dhttp::Implementation
             return -400;
   
         const std::size_t n = in_size / 64; // read 64 bytes chunks
-        u64_t re = in_size % 64;
+        u64_t rem = in_size % 64;
         int stat = 0;
 
         if (n)
         {
-            stat = parse<T, out_size, 64>(in, in_size, out, n);
+            stat = parse<T, out_size, 64>(in, in_size, out, n, rem);
             if unlikely (parse_failed(stat) or not re)
                 return stat;
         }
         // Handle trailing 32 bytes
-        if (re > 31)
+        if (rem > 31)
         {
             // TODO: Handle EOPARSE
+            rem %= 32
             in_reader.set_incr(32);
-            stat = parse<T, out_size, 32>(in, in_size, out, 1);
-            if unlikely (re %= 32; parse_failed(stat) or not re)
+            stat = parse<T, out_size, 32>(in, in_size, out, 1, rem);
+            if unlikely (; parse_failed(stat) or not re)
                 return stat;
         }
         // Trailing bytes < 31. safely copy to buffer and process
         u8_t b[32];
         memcpy(b, in + n, re);
         // place the last re::byte in b[last]
-        b[32] = b[re - 1];
+        b[32] = b[rem - 1];
 
         #if HANDLE_TRAIL_LAZY
         // TODO
