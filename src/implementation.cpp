@@ -257,7 +257,7 @@ namespace dhttp::Implementation
                 // in each case tab[top_three_bits_in_eop] gives us the number of bytes we need to check
                 // also tab[tab[last_three_bits_in_eop]] gives the number of times we need to shift backward in order to read a complete crlfcrlf word
                 static constexpr eop_tab[8]{0, 2, 1, 0, 3, 0, 2, 1};
-                int n = eop_tab[eop_tab >> N - 3];
+                int n = eop_tab[eop >> N - 3];
                 if (run or rem >= n) [[likely]]
                     return -((reinterpret_cast<u32_t *>(in) + (j - 1) * N - eop_tab[n])[0] == 0xd0a0d0a);
                 return -(this->n_bytes_to_complete = n);  // we need atleast <= 3 bytes to confirm an exact eop
