@@ -33,8 +33,8 @@ namespace dhttp::simd::fallback
 
         inline u64_t to_bitmask(void)
         {
-            const u32_t x = ((((lo * constant::compress) >> 48) & 0xff00ULL) | ((xlo * constant::compress) >> 56));
-            const u32_t y = ((((hi * constant::compress) >> 48) & 0xff00ULL) | ((xhi * constant::compress) >> 56));
+            const u32_t x = ((((xlo * constant::compress) >> 48) & 0xff00ULL) | ((lo * constant::compress) >> 56));
+            const u32_t y = ((((xhi * constant::compress) >> 48) & 0xff00ULL) | ((hi * constant::compress) >> 56));
             return y << 16 | x;
         }
 
