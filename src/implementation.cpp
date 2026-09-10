@@ -165,7 +165,7 @@ namespace dhttp::Implementation
         crlf &= crlf - 1;
         in_reader.incr_by(reqline.req_line[out_reader.at() + 1] + 2); // +2 for cr and lf
         state.completed_request_line(true);
-        return -(out_reader.iszero() or (req_version_tag(reqline.req_line, in, _req_type::index[this->req_type]) isnot http_1));
+        return -(out_reader.iszero() or req_version_tag(reqline.req_line, in, Reqtype::index[this->req_type]) isnot http_1);
     }
 
     template <typename T, T out_size, int N>

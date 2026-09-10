@@ -204,49 +204,17 @@ namespace dhttp::Implementation
         bool trailing_wsp      : 1 = 0;
         bool parse_completed   : 1 = 0;
         bool :3 = 0;
+
+        inline void completed_request_line(bool x)  { return s.request_completed = x; }
+        inline void set_pending_value(bool x)       { pending_value = x; }
+        inline void set_trailing_ret(bool x)        { trailing_ret  = x; }
+        inline void set_trailing_whitespace(bool x) { trailing_wsp  = x; }
+        inline bool completed_request_line(void)  const { return request_completed; }
+        inline bool has_pending_value(void)       const { return pending_value;     }
+        inline bool has_trailing_ret(void)        const { return trailing_ret;      }
+        inline bool has_trailing_whitespace(void) const { return trailing_wsp;      }
     };
 
-        inline bool State::completed_request_line(bool x)
-        {
-            return s.request_completed = x;
-        }
-
-        inline bool State::completed_request_line(void) const
-        {
-            return request_completed;
-        }
-
-        inline void State::set_pending_value(bool x)
-        {
-            pending_value = x;
-        }
-
-        inline void State::set_trailing_ret(bool x)
-        {
-            trailing_ret = x;
-        }
-
-        inline void State::set_trailing_whitespace(bool x)
-        {
-            trailing_wsp = x;
-        }
-
-        inline bool State::has_pending_value(void) const
-        {
-            return pending_value;
-        }
-
-        inline bool State::has_trailing_ret(void)
-        {
-            return trailing_ret;
-        }
-
-        inline bool State::has_trailing_whitespace(void)
-        {
-            return trailing_wsp;
-        }
-    };
-   
     struct req_line
     {
         /*
@@ -260,7 +228,7 @@ namespace dhttp::Implementation
         u64_t req_line[4];
     };
 
-    struct _req_type
+    struct Reqtype
     {
         using req_index = const int (&)[];
         enum type : int {
@@ -284,25 +252,29 @@ namespace dhttp::Implementation
     class http
     {
     public:
-        http()
-            : req_type(_req_type::type::request),
-              out_reader(3),
-              in_reader(),
-              version(-1),
-              n_bytes_to_complete(0),
-              state(0),
-              unused(true) {}
+        http(void) { reset(); }
+
+        void reset(void)
+        {
+            req_type(Reqtype::type::request); out_reader(3);
+            in_reader(); version(-1); n_bytes_to_complete(0);
+            state(); unused(true);
+        }
 
     private:
-        /// READ SIZE
-        static constexpr unsigned int read_size = 64;
-
+        // header line (version, method, version, status, message)
         req_line reqline;
-        Reader out_reader, in_reader;
-        _req_type::type req_type;
+        // internal in & out buffer counter
+        Reader in_reader, out_reader;
+        // request type (request or response)
+        Reqtype::type req_type;
+        // http minor version (the major is tested to be 1)
         int  version;
+        // number of expected eop (end of parse) bytes (crlfcrlf)
         int  n_bytes_to_complete;
+        // keep track of sp and cr
         State state;
+        // true after reset
         bool unused;
 
 

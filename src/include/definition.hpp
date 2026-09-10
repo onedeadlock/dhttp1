@@ -85,7 +85,7 @@
 #    define inline    __attribute__((__always_inline__)) inline
 #    define make_flat __attribute__((flatten))
 #elif __HAVE_MSVC__
-#    define inline  [[msvc::forceinline]]
+#    define inline  __forceinline
 #    define make_flat 
 #else
 #    define inline inline
