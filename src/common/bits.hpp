@@ -6,56 +6,56 @@
 
 namespace dhttp::common::bits
 {
-    template <typename T>
+    template <typename T=u64_t>
     inline T lsb(T x)
     {
         static_assert(std::is_integral_v<T> and !std::is_signed_v<T>);
         return x & -x;
     }
 
-    template <typename T>
+    template <typename T=u64_t>
     inline T trim(T x)
     {
         static_assert(std::is_integral_v<T> and !std::is_signed_v<T>);
         return x & ~(x << 1);
     }
 
-    template <typename T>
+    template <typename T=u64_t>
     inline T trim_u(T x)
     {
         static_assert(std::is_integral_v<T> and !std::is_signed_v<T>);
         return x & ~(x >> 1);
     }
 
-    template <typename T>
+    template <typename T=u64_t>
     inline T tzmask(T x)
     {
         static_assert(std::is_integral_v<T> and !std::is_signed_v<T>);
         return ~x & (x - 1);
     }
 
-    template <typename T>
+    template <typename T=u64_t>
     inline T blsmask(T x)
     {
         static_assert(std::is_integral_v<T> and !std::is_signed_v<T>);
         return x ^ (x - 1);
     }
 
-    template <typename T>
+    template <typename T=u64_t>
     inline T blsr(T x)
     {
         static_assert(std::is_integral_v<T> and !std::is_signed_v<T>);
         return x & (x - 1);
     }
 
-    template <typename T>
+    template <typename T=u64_t>
     inline T blsfill(T x)
     {
         static_assert(std::is_integral_v<T> and !std::is_signed_v<T>);
         return x | (x - 1);
     }
 
-    template <typename T>
+    template <typename T=u64_t>
     inline T xlsfill(T x)
     {
         static_assert(std::is_integral_v<T> and !std::is_signed_v<T>);
@@ -63,11 +63,11 @@ namespace dhttp::common::bits
         return x ^ -x;
     }
 
-    template <typename T>
+    template <typename T=u64_t>
     inline T tzcnt(T x)
     {
         static_assert(std::is_integral_v<T> and !std::is_signed_v<T>);
-        if constexpr (sizeof (T) == 64)
+        if constexpr (sizeof (T) == 8)
         {
 #if __GNUC__
         return __builtin_ctzll(x);

@@ -136,7 +136,7 @@ namespace dhttp::Implementation
 
         if ((crlf & 0x02) and this->unused) [[unlikely]]
             return  ((crlf & crlf >> 2) & 0x04) ? -400 /* empty request */ : -400 /* blank line TODO: skip */;
-        if (has_trailing_ret()) [[unlikely]]
+        if (state.has_trailing_ret()) [[unlikely]]
         {
             if not (lf & 0x01)
                 return -400;
@@ -147,7 +147,7 @@ namespace dhttp::Implementation
         }
 
         const u64_t sp    = simdv<N>::cmp_eq(v, vsp, vhtab).to_bitmask();
-        const u64_t wsp   = ~static_cast<const u64_t>(has_trailing_whitespace()) & bits::trim(sp); // valid whitespace
+        const u64_t wsp   = ~static_cast<const u64_t>(state.has_trailing_whitespace()) & bits::trim(sp); // valid whitespace
         const u64_t tchar = simdv<N>::gt_or_lt(v, '\x20', '\x7f').to_bitmask() | wsp;
 
         if (auto has_any_rejected_token = (~tchar | lf | (cr & ~simd<N>::msb)) & bits::tzmask(crlf))
@@ -158,13 +158,13 @@ namespace dhttp::Implementation
 
         if not (crlf)
         {
-            set_trailing_ret(static_cast<bool>(cr & simd<N>::msb));
-            set_trailing_whitespace(static_cast<bool>(sp & simd<N>::msb));
+            state.set_trailing_ret(static_cast<bool>(cr & simd<N>::msb));
+            state.set_trailing_whitespace(static_cast<bool>(sp & simd<N>::msb));
             return in_reader.incr(), 0;
         }
         crlf &= crlf - 1;
         in_reader.incr_by(reqline.req_line[out_reader.at() + 1] + 2); // +2 for cr and lf
-        completed_request_line();
+        state.completed_request_line(true);
         return -(out_reader.iszero() or (req_version_tag(reqline.req_line, in, _req_type::index[this->req_type]) isnot http_1));
     }
 
@@ -180,14 +180,14 @@ namespace dhttp::Implementation
                 np.pos = end + skip;
             };
 
-        if (has_pending_value())
+        if (state.has_pending_value())
         {
             auto& value = out[out_reader.at()].value;
             if not (crlf)
                 return in_reader.incr(), req_header_value(v);
             set_header(value, out[out_reader.incr()].name, in_reader.at(), crlf, 2);
             crlf &= crlf - 1;
-            unset_pending_value();
+            state.set_pending_value(false);
             if not (req_header_value(v, lf, cr, __crlf) or trim_whitespace<T>(in, value.pos, value.len)) [[unlikely]]
                 return -400;
         }
@@ -205,7 +205,7 @@ namespace dhttp::Implementation
             set_header(name, value, in_reader.at(), col, 1);
             if not (crlf)
             {
-                set_pending_value();
+                state.set_pending_value(true);
                 in_reader.incr();
                 return req_header_value(v);
             }
@@ -240,9 +240,9 @@ namespace dhttp::Implementation
             u64_t cr   = simdv<N>::cmp_eq(v, v_cr ).to_bitmask();
             u64_t crlf = cr & (lf << 1);
 
-            if (incomplete_request_line() and parse_request_line<N>(in, size, v, lf, cr, crlf) < 0) [[unlikely]]
+            if (not state.complete_request_line() and parse_request_line<N>(in, size, v, lf, cr, crlf) < 0) [[unlikely]]
                return -400;
-            if (completed_request_line() and parse_header<T, out_size, N>(in, in_size, out, v, lf, cr, crlf) < 0)
+            if (state.completed_request_line() and parse_header<T, out_size, N>(in, in_size, out, v, lf, cr, crlf) < 0) [[unlikely]]
                 return -400;
             
             // maybe the end of us parsing this buffer (eop)
@@ -253,8 +253,8 @@ namespace dhttp::Implementation
             // or maybe eop is incomplete: like cr, crlf, crlfcr
             if (auto eop = (lf | cr) & simdv<N>::msb3) [[unlikely]]
             {
-                // the top three bits of intN in the eop mask can either be 100, 110 or 111
-                // in each case tab[top_three_bits_in_eop] gives us the number of bytes we need to check
+                // the top three bits of intN in the eop mask can be 100, 110 or 111
+                // in any of the cases, tab[top_three_bits_in_eop] gives us the number of bytes we need to check
                 // also tab[tab[last_three_bits_in_eop]] gives the number of times we need to shift backward in order to read a complete crlfcrlf word
                 static constexpr eop_tab[8]{0, 2, 1, 0, 3, 0, 2, 1};
                 int n = eop_tab[eop >> N - 3];

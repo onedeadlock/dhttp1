@@ -67,6 +67,7 @@
 /////////////////////////////////////
 
 // branch prediction
+#if 0
 #if __HAVE_GNUC__
 #    define likely(x)   (__builtin_expect(!!(x), 1))
 #    define unlikely(x) (__builtin_expect(!!(x), 0))
@@ -76,6 +77,7 @@
 #else
 #    define likely(x)   (x)
 #    define unlikely(x) (x)
+#endif
 #endif
 
 // inline

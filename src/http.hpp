@@ -196,6 +196,57 @@ namespace dhttp::Implementation
         u64_t __max;
     };
 
+    alignas(1) struct State
+    {
+        bool request_completed : 1 = 0;
+        bool pending_value     : 1 = 0;
+        bool trailing_ret      : 1 = 0;
+        bool trailing_wsp      : 1 = 0;
+        bool parse_completed   : 1 = 0;
+        bool :3 = 0;
+    };
+
+        inline bool State::completed_request_line(bool x)
+        {
+            return s.request_completed = x;
+        }
+
+        inline bool State::completed_request_line(void) const
+        {
+            return request_completed;
+        }
+
+        inline void State::set_pending_value(bool x)
+        {
+            pending_value = x;
+        }
+
+        inline void State::set_trailing_ret(bool x)
+        {
+            trailing_ret = x;
+        }
+
+        inline void State::set_trailing_whitespace(bool x)
+        {
+            trailing_wsp = x;
+        }
+
+        inline bool State::has_pending_value(void) const
+        {
+            return pending_value;
+        }
+
+        inline bool State::has_trailing_ret(void)
+        {
+            return trailing_ret;
+        }
+
+        inline bool State::has_trailing_whitespace(void)
+        {
+            return trailing_wsp;
+        }
+    };
+   
     struct req_line
     {
         /*
@@ -229,6 +280,7 @@ namespace dhttp::Implementation
         };
     };
 
+
     class http
     {
     public:
@@ -250,7 +302,7 @@ namespace dhttp::Implementation
         _req_type::type req_type;
         int  version;
         int  n_bytes_to_complete;
-        u8_t state;
+        State state;
         bool unused;
 
 
@@ -275,52 +327,6 @@ namespace dhttp::Implementation
         inline bool expect_end_of_parse_char(int eop)
         {
             return n_bytes_to_complete;
-        }
-
-        // TODO
-        inline bool incomplete_request_line(void)
-        {
-            return state & 0;
-        }
-
-        inline bool completed_request_line(void)
-        {
-            return state = 0;
-        }
-
-        inline bool has_pending_value(void)
-        {
-            return state & 0;
-        }
-
-        inline void set_pending_value(void)
-        {
-            state = 0;
-        }
-
-        inline void unset_pending_value(void)
-        {
-            state = 0;
-        }
-
-        inline void set_trailing_ret(bool x)
-        {
-            state = 0;
-        }
-
-        inline bool has_trailing_ret(void)
-        {
-            return state & 0;
-        }
-
-        inline void set_trailing_whitespace(bool x)
-        {
-            state = 0;
-        }
-
-        inline bool has_trailing_whitespace(void)
-        {
-            return state & 0;
         }
     };
 };
