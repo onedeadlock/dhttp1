@@ -228,12 +228,13 @@ namespace dhttp::Implementation
         static_assert(N >= 32 and (N & 1) == 0);
 
         std::size_t j = 0;
-        bool run = true;
+        u8_t *b   = reinterpret_cast<u8_t>(in) + in_reader.at();
+        u8_t *end = b + run_size;
+
         do {
             static const simdv v_lf = simdv<N>::splat('\xa');
             static const simdv v_cr = simdv<N>::splat('\xd');
 
-            u8_t *b = reinterpret<u8_t *>(reinterpret_cast<u64_t *>(in) + j);
             simdv<N> v = simd<N>::load(b);
 
             u64_t lf   = simdv<N>::cmp_eq(v, v_lf ).to_bitmask();
@@ -247,9 +248,9 @@ namespace dhttp::Implementation
             
             // maybe the end of us parsing this buffer (eop)
             if (auto eop = crlf & crlf >> 2)
-                return j * N - (N - bits::tzcnt(eop));
-            // incr
-            run = ++j < run_size;
+                return 0;
+            // next chunk
+            b += N;
             // or maybe eop is incomplete: like cr, crlf, crlfcr
             if (auto eop = (lf | cr) & simdv<N>::msb3) [[unlikely]]
             {
@@ -258,46 +259,44 @@ namespace dhttp::Implementation
                 // also tab[tab[last_three_bits_in_eop]] gives the number of times we need to shift backward in order to read a complete crlfcrlf word
                 static constexpr eop_tab[8]{0, 2, 1, 0, 3, 0, 2, 1};
                 int n = eop_tab[eop >> N - 3];
-                if (run or rem >= n) [[likely]]
-                    return -((reinterpret_cast<u32_t *>(in) + (j - 1) * N - eop_tab[n])[0] == 0xd0a0d0a);
+                if (b < end or rem >= n) [[likely]]
+                    return -((reinterpret_cast<u32_t *>(b - N - eop_tab[n])[0] == 0xd0a0d0a);
                 return -(this->n_bytes_to_complete = n);  // we need atleast <= 3 bytes to confirm an exact eop
             }
-        } while (run);
+        } while (b < end);
         return 0;
     }
 
     template <typename T, T out_size>
     int http::nparse(void *in, size_t in_size, req<T, out_size> &out)
     {
-        static_assert(std::is_integral_v(T) and sizeof(T) <= sizeof(u64_t));
-        static_assert(out_size > 0);
+        static_assert(std::is_integral_v(T)      and
+                      sizeof(T) <= sizeof(u64_t) and out_size > 0);
 
         if (in_reader.set(in_size, 64) < 0 or out_reader.set(out_size) < 0)
             return -400;
   
-        const std::size_t n = in_size / 64; // read 64 bytes chunks
-        u64_t rem = in_size % 64;
-        int stat = 0;
-
-        if (n)
+        u64_t rem  = in_size % 64;
+        int   stat = 0;
+        // TODO: start after pos
+        // first we try 64 bytes chunk
+        if (const std::size_t n = in_size & ~(64 - 1))
         {
             stat = parse<T, out_size, 64>(in, in_size, out, n, rem);
-            if unlikely (parse_failed(stat) or not re)
+            if unlikely (parse_failed(stat) or not rem)
                 return stat;
         }
-        // Handle trailing 32 bytes
+        // or 32 bytes (in_size < 64)
         if (rem > 31)
         {
-            // TODO: Handle EOPARSE
-            rem %= 32
             in_reader.set_incr(32);
-            stat = parse<T, out_size, 32>(in, in_size, out, 1, rem);
-            if unlikely (; parse_failed(stat) or not re)
+            stat = parse<T, out_size, 32>(in, in_size, out, 1, rem %= 32);
+            if unlikely (parse_failed(stat) or not rem)
                 return stat;
         }
         // Trailing bytes < 31. safely copy to buffer and process
         u8_t b[32];
-        memcpy(b, in + n, re);
+        memcpy(b, in + n, rem);
         // place the last re::byte in b[last]
         b[32] = b[rem - 1];
 
