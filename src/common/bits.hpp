@@ -6,53 +6,73 @@
 
 namespace dhttp::common::bits
 {
-    inline u64_t lsb(u64_t x)
+    template <typename T>
+    inline T lsb(T x)
     {
+        static_assert(std::is_integral_v<T> and !std::is_signed_v<T>);
         return x & -x;
     }
 
-    inline u64_t trim(u64_t x)
+    template <typename T>
+    inline T trim(T x)
     {
+        static_assert(std::is_integral_v<T> and !std::is_signed_v<T>);
         return x & ~(x << 1);
     }
 
-    inline u64_t trim_u(u64_t x)
+    template <typename T>
+    inline T trim_u(T x)
     {
+        static_assert(std::is_integral_v<T> and !std::is_signed_v<T>);
         return x & ~(x >> 1);
     }
 
-    inline u64_t tzmask(u64_t x)
+    template <typename T>
+    inline T tzmask(T x)
     {
+        static_assert(std::is_integral_v<T> and !std::is_signed_v<T>);
         return ~x & (x - 1);
     }
 
-    inline u64_t blsmask(u64_t x)
+    template <typename T>
+    inline T blsmask(T x)
     {
+        static_assert(std::is_integral_v<T> and !std::is_signed_v<T>);
         return x ^ (x - 1);
     }
 
-    inline u64_t blsr(u64_t x)
+    template <typename T>
+    inline T blsr(T x)
     {
+        static_assert(std::is_integral_v<T> and !std::is_signed_v<T>);
         return x & (x - 1);
     }
 
-    inline u64_t blsfill(u64_t x)
+    template <typename T>
+    inline T blsfill(T x)
     {
+        static_assert(std::is_integral_v<T> and !std::is_signed_v<T>);
         return x | (x - 1);
     }
 
-    inline u64_t xlsfill(u64_t x)
+    template <typename T>
+    inline T xlsfill(T x)
     {
+        static_assert(std::is_integral_v<T> and !std::is_signed_v<T>);
         // xlsfiil is not an actual instruction, but it does the opposite of blsfill
         return x ^ -x;
     }
 
-    inline u64_t tzcnt(u64_t x)
+    template <typename T>
+    inline T tzcnt(T x)
     {
-#if HAVE_GNUC_C__
+        static_assert(std::is_integral_v<T> and !std::is_signed_v<T>);
+        if constexpr (sizeof (T) == 64)
+        {
+#if __GNUC__
         return __builtin_ctzll(x);
-#elif HAVE_MSVC_C__
-        u64_t vx;
+#elif __MSVC__
+        T vx;
         _BitScanReverse(&vx, x);
         return vx;
 #else
@@ -64,15 +84,21 @@ namespace dhttp::common::bits
             x |= x >> 32;
             return constant::DeBruijn64_seq[(x * constant::DeBruijn64_const) >> 58];
 #endif
-    }
-
-    #if HAVE_GNUC_C__
-    __attribute__((const, optimize("no-if-conversion")))
-    #endif
-    inline u64_t _tzcnt_x(umax_t x)
-    {
-        if constexpr (constant::max_int_size == 16)
-            return static_cast<u64_t>(x) ? tzcnt(static_cast<u64_t>(x)) : 64 + tzcnt(static_cast<u64_t>(x >> 64));
-        return tzcnt(static_cast<u64_t>(x));
+        }
+#if __GNUC__
+        return __builtin_ctz(static_cast<u32_t>(x));
+#elif __MSVC__
+        u32_t vx;
+        _BitScanReverse32(&vx, static_cast<u32_t>(x));
+        return vx;
+#else
+            u32_t v = static_cast<u32_t>(v);
+            v |= v >> 1;
+            v |= v >> 2;
+            v |= v >> 4;
+            v |= v >> 8;
+            v |= v >> 16;
+            return constant::DeBruijn32_seq[(v * constant::DeBruijn32_const) >> 24]; // TODO: DB table 32
+#endif
     }
 }
