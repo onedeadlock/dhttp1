@@ -4,8 +4,8 @@
 
 namespace dhttp::common::constant
 {
-    static constexpr std::size_t max_int_size   = sizeof (umax_t);
-    static constexpr std::size_t max_int_size_p = (max_int_size / 2) - 1;
+    static constexpr std::size_t int_size   = sizeof (u64_t);
+    static constexpr std::size_t int_size_p = (int_size / 2) - 1;
 
     constexpr u64_t c7f = 0x7f7f7f7f7f7f7f7fULL;
     constexpr u64_t cff = 0xffffffffffffffffULL;
@@ -18,27 +18,18 @@ namespace dhttp::common::constant
 
     constexpr u64_t compress  = 0x0002040810204081ULL;
 
-    constexpr umax_t msb_64   = 0x8000000000000000ULL;
-    constexpr umax_t msb_32   = 0x0000000080000000ULL;
+    constexpr u64_t msb_64   = 0x8000000000000000ULL;
+    constexpr u64_t msb_32   = 0x0000000080000000ULL;
 
-    constexpr umax_t msb3_64  = 0x8000000000000000ULL;
-    constexpr umax_t msb3_32  = 0x0000000080000000ULL;
+    constexpr u64_t msb3_64  = 0x8000000000000000ULL;
+    constexpr u64_t msb3_32  = 0x0000000080000000ULL;
     
 
-    constexpr umax_t max_c7f = UMAX_C(c7f) << 64 | c7f;
-    constexpr umax_t max_cff = UMAX_C(cff) << 64 | cff;
-    constexpr umax_t max_c80 = UMAX_C(c80) << 64 | c80;
-    constexpr umax_t max_c01 = UMAX_C(c01) << 64 | c01;
-    constexpr umax_t max_c20 = UMAX_C(c20) << 64 | c20;
-    constexpr umax_t max_c30 = UMAX_C(c30) << 64 | c30;
-    constexpr umax_t max_c09 = UMAX_C(c09) << 64 | c09;
-    constexpr umax_t max_cdf = UMAX_C(cdf) << 64 | cdf;
-
-    constexpr u64_t  hyphen = UMAX('\x2d') * max_c01;
+    constexpr u64_t  hyphen = U64('\x2d') * c01;
     
-    constexpr u64_t AZ_const = max_c7f & max_cdf;
-    constexpr u64_t A = UMAX('\x7f' - '\x40') * max_c01;
-    constexpr u64_t Z = UMAX('\x7f' + '\x5b') * max_c01;
+    constexpr u64_t AZ_const = c7f & cdf;
+    constexpr u64_t A = U64('\x7f' - '\x40') * c01;
+    constexpr u64_t Z = U64('\x7f' + '\x5b') * c01;
 
     constexpr u64_t DeBruijn64_const = 0x03f79d71b4cb0a89ULL;
 
@@ -58,80 +49,80 @@ namespace dhttp::common::scalar
     #if __GNUC__
     #endif
 
-    inline constexpr umax_t _dup(u8_t v)
+    inline constexpr u64_t _dup(u8_t v)
     {
-        return UMAX(v) * constant::max_c01;
+        return UMAX(v) * constant::c01;
     }
 
-    inline umax_t _cmpeqz(umax_t v)
+    inline u64_t _cmpeqz(u64_t v)
     {
-        return ~(v | ((v & constant::max_c7f) + constant::max_c7f)) & constant::max_c80;
+        return ~(v | ((v & constant::c7f) + constant::c7f)) & constant::c80;
     }
 
-     inline umax_t _cmpeqz_(umax_t v)
+     inline u64_t _cmpeqz_(u64_t v)
     {
-        return ((v & constant::max_c7f) - constant::max_c01) & ~v & constant::max_c80;
+        return ((v & constant::c7f) - constant::c01) & ~v & constant::c80;
     }
 
-    inline umax_t _cmpeq(umax_t u, umax_t v)
+    inline u64_t _cmpeq(u64_t u, u64_t v)
     {
         return _cmpeqz(u ^ v);
     }
 
-    inline umax_t _cmpeq(umax_t u, umax_t v, umax_t w)
+    inline u64_t _cmpeq(u64_t u, u64_t v, u64_t w)
     {
         return _cmpeqz((u ^ v) | (u ^ w));
     }
 
-    inline umax_t _cmpgtz(umax_t v)
+    inline u64_t _cmpgtz(u64_t v)
     {
-        return (v | ((v & constant::max_c7f) + constant::max_c7f)) & constant::max_c80;
+        return (v | ((v & constant::c7f) + constant::c7f)) & constant::c80;
     }
 
     template<u8_t A>
-    inline umax_t _cmplt(umax_t v)
+    inline u64_t _cmplt(u64_t v)
     {
         static_assert(A < 0x7f);
 
-        static constexpr umax_t a = _dup(0x7f + A);
-        return (a - (v & constant::max_c7f)) & (~v & constant::max_c80);
+        static constexpr u64_t a = _dup(0x7f + A);
+        return (a - (v & constant::c7f)) & (~v & constant::c80);
     }
 
     template<u8_t A>
-    inline umax_t _cmpgt(umax_t v)
+    inline u64_t _cmpgt(u64_t v)
     {
         static_assert(A < 0x7f);
 
-        static constexpr umax_t a = _dup(0x7f - A);
-        return (v | (a + (v & constant::max_c7f))) & constant::max_c80;
+        static constexpr u64_t a = _dup(0x7f - A);
+        return (v | (a + (v & constant::c7f))) & constant::c80;
     }
 
     template <u8_t A, u8_t B>
-    inline umax_t _cmpml(umax_t v)
+    inline u64_t _cmpml(u64_t v)
     {
         static_assert(A < 0x7f && B < 0x80);
 
-        static constexpr umax_t a = _dup(0x7f - A);
-        static constexpr umax_t b = _dup(0x7f + B);
-        return (b - (v & constant::max_c7f)) & (a + (v & constant::max_c7f)) & (~v & constant::max_c80);
+        static constexpr u64_t a = _dup(0x7f - A);
+        static constexpr u64_t b = _dup(0x7f + B);
+        return (b - (v & constant::c7f)) & (a + (v & constant::c7f)) & (~v & constant::c80);
     }
 
-    inline umax_t ascii_letters(umax_t v)
+    inline u64_t ascii_letters(u64_t v)
     {
-        return (constant::Z - (v & constant::AZ_const)) & (constant::A + (v & constant::AZ_const)) & (~v & constant::max_c80);
+        return (constant::Z - (v & constant::AZ_const)) & (constant::A + (v & constant::AZ_const)) & (~v & constant::c80);
     }
 
-    inline umax_t ascii_numbers_v(umax_t v)
+    inline u64_t ascii_numbers_v(u64_t v)
     {
         return _cmpml<'\x2f', '\x3a'>(v);
     }
 
-    inline umax_t ascii_numbers(umax_t v)
+    inline u64_t ascii_numbers(u64_t v)
     {
-        return _cmplt<10>(v ^ constant::max_c30);
+        return _cmplt<10>(v ^ constant::c30);
     }
 
-    inline umax_t ascii_hyphen(umax_t v)
+    inline u64_t ascii_hyphen(u64_t v)
     {
         return _cmpeqz(v ^ constant::hyphen);
     }
@@ -141,10 +132,10 @@ namespace dhttp::common::scalar
         return ascii_letters(v) | ascii_numbers(v) | ascii_hyphen(v);
     }
 
-    inline umax_t non_printable(umax_t v)
+    inline u64_t non_printable(u64_t v)
     {
         // Non printable characters here are 0x7f (DEL) or characters below 0x20 (sp)
-        static constexpr umax_t u = constant::max_c80 | constant::max_c20;
-        return (u - (((v & constant::max_c7f) + constant::max_c01) & constant::max_c7f)) & (~v & constant::max_c80);
+        static constexpr u64_t u = constant::c80 | constant::c20;
+        return (u - (((v & constant::c7f) + constant::c01) & constant::c7f)) & (~v & constant::c80);
     }
 }
