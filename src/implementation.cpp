@@ -115,7 +115,7 @@ namespace dhttp::Implementation
     {
         static_assert(sizeof(T) <= sizeof(u64_t));
         void *bv = reinterpret_cast<u8_t *>(b) + pos;
-        std::size_t t_pos = rcount_whitespace(bv, static_cast<u64_t>(len));
+        std::size_t t_pos = rcount_whitespace(bv, U64(len));
 
         if (t_pos == len) [[unlikely]]
             return 1; // all whitespace
@@ -152,7 +152,7 @@ namespace dhttp::Implementation
         }
 
         const u64_t sp    = simdv<N>::cmp_eq(v, vsp, vhtab).to_bitmask();
-        const u64_t wsp   = ~static_cast<const u64_t>(state.has_trailing_whitespace()) & bits::trim(sp); // valid whitespace
+        const u64_t wsp   = ~U64(state.has_trailing_whitespace()) & bits::trim(sp); // valid whitespace
         const u64_t tchar = simdv<N>::gt_or_lt(v, '\x20', '\x7f').to_bitmask() | wsp;
 
         if (auto has_any_rejected_token = (~tchar | lf | (cr & ~simd<N>::msb)) & bits::tzmask(crlf))
