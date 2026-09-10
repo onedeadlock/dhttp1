@@ -51,7 +51,7 @@ namespace dhttp::common::scalar
 
     inline constexpr u64_t _dup(u8_t v)
     {
-        return UMAX(v) * constant::c01;
+        return U64(v) * constant::c01;
     }
 
     inline u64_t _cmpeqz(u64_t v)
@@ -59,7 +59,7 @@ namespace dhttp::common::scalar
         return ~(v | ((v & constant::c7f) + constant::c7f)) & constant::c80;
     }
 
-     inline u64_t _cmpeqz_(u64_t v)
+    inline u64_t _cmpeqz_(u64_t v)
     {
         return ((v & constant::c7f) - constant::c01) & ~v & constant::c80;
     }
@@ -98,7 +98,7 @@ namespace dhttp::common::scalar
     }
 
     template <u8_t A, u8_t B>
-    inline u64_t _cmpml(u64_t v)
+    inline u64_t _cmp_gt_and_lt(u64_t v)
     {
         static_assert(A < 0x7f && B < 0x80);
 
@@ -114,7 +114,7 @@ namespace dhttp::common::scalar
 
     inline u64_t ascii_numbers_v(u64_t v)
     {
-        return _cmpml<'\x2f', '\x3a'>(v);
+        return _cmp_gt_and_lt<'\x2f', '\x3a'>(v);
     }
 
     inline u64_t ascii_numbers(u64_t v)
