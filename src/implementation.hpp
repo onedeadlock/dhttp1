@@ -146,11 +146,16 @@ namespace dhttp::Implementation
             return __i;
         }
 
-        u64_t count(void) const noexcept
+        u64_t size(void) const noexcept
         {
             return __i;
         }
 
+        u64_t capacity(void) const noexcept
+        {
+            return __max;
+        }
+        
         u64_t iszero(void) const noexcept
         {
             return __i == 0;
@@ -203,9 +208,8 @@ namespace dhttp::Implementation
         bool trailing_ret      : 1 = 0;
         bool trailing_wsp      : 1 = 0;
         bool parse_completed   : 1 = 0;
-        bool :3 = 0;
 
-        inline void completed_request_line(bool x)  { return s.request_completed = x; }
+        inline bool completed_request_line(bool x)  { return request_completed = x; }
         inline void set_pending_value(bool x)       { pending_value = x; }
         inline void set_trailing_ret(bool x)        { trailing_ret  = x; }
         inline void set_trailing_whitespace(bool x) { trailing_wsp  = x; }
@@ -256,9 +260,9 @@ namespace dhttp::Implementation
 
         void reset(void)
         {
-            req_type(Reqtype::type::request); out_reader(3);
-            in_reader(); version(-1); n_bytes_to_complete(0);
-            state(); unused(true);
+            req_type  = Reqtype::type::request; out_reader     = {3, 1};
+            in_reader = {0}; version = -1; n_bytes_to_complete = 0;
+            state     = {0}; unused  = true;
         }
 
     private:
@@ -281,7 +285,7 @@ namespace dhttp::Implementation
         int   req_version(u8_t i);
         u16_t req_size(const u64_t (&req)[], const int i) const;
         bool  req_version_is_http_1(const void *ver_string);
-        bool  req_version_tag(const u64_t (&req)[], const void *buf, const _req_type::req_index& i);
+        bool  req_version_tag(const u64_t (&req)[], const void *buf, const Reqtype::req_index& i);
         template <typename T, T out_size, int N>
         int parse(void *in, size_t in_size, req<T, out_size>& out, std::size_t run_size, std::size_t rem);
         template<int N>

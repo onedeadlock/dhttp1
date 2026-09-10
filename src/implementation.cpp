@@ -1,4 +1,4 @@
-#include "http.hpp"
+#include "implementation.hpp"
 
 namespace dhttp::Implementation
 {
@@ -16,55 +16,60 @@ namespace dhttp::Implementation
     inline std::size_t rcount_whitespace(void *b, u64_t len)
     {
         std::size_t i = 0;
-        while (i < len and is_whitespace(reinterpret_cast<u8_t *>(b)[i++]))
-            pass();
+        while (i < len and is_whitespace(reinterpret_cast<u8_t *>(b)[i++])) pass();
         return i;
     }
     
     inline std::size_t lcount_whitespace(void *b, u64_t len)
     {
         std::size_t i = len;
-        while (i and is_whitespace(reinterpret_cast<u8_t *>(b)[--i]))
-            pass();
+        while (i and is_whitespace(reinterpret_cast<u8_t *>(b)[--i])) pass();
         return len - i;
     }
-        
-    inline u64_t req_valid_tchar(const u8_t *b)
+    
+    inline bool is_valid_name_token_(const u8_t *b)
     {
-        if constexpr (SUPPORT_FULL_TCHAR)
-            return U64(tables::tchar_map[b[0]]) << 0U | U64(tables::tchar_map[b[1]]) << 8U |
-                   U64(tables::tchar_map[b[2]]) << 16 | U64(tables::tchar_map[b[3]]) << 24 |
-                   U64(tables::tchar_map[b[4]]) << 32 | U64(tables::tchar_map[b[5]]) << 40 |
-                   U64(tables::tchar_map[b[6]]) << 48 | U64(tables::tchar_map[b[7]]) << 56;
-        return 0;
+        auto &x = tables::tchar_map;
+        if constexpr (OPTIMIZE_FOR_MOST_CASE > 3)
+        {
+            return U64(x[b[0]]) & U64(x[b[1]]) & U64(x[b[2]]) & U64(x[b[3]]) &
+                   U64(x[b[4]]) & U64(x[b[5]]) & U64(x[b[6]]) & U64(x[b[7]]);
+        }
+        // most compilers will unroll this anyway
+        int i = 0;
+        while (i < 8 and x[b[i++]]) [[likely]] pass();
+        return i == 8;
     }
 
-    inline bool req_tchar(const void *b, const umax_t mask)
+    make_flat inline bool is_valid_name_token(const void *b)
     {
         if constexpr (OPTIMIZE_FOR_MOST_CASE)
-            return not(~scalar::ascii_fast_tchar(*reinterpret_cast<const u64_t *>(b)) & mask and ~req_valid_tchar(reinterpret_cast<const u8_t *>(b)) & mask); // Most tokens are a-zA-Z0-9 and -
-        return not (~req_valid_tchar(reinterpret_cast<const u8_t *>(b)) & mask);
+        {
+            // Most tokens in  header names are usually a-z, A-Z, 0-9 or -
+            return scalar::ascii_fast_tchar(reinterpret_cast<const u64_t *>(b)[0]) or is_valid_name_token(reinterpret_cast<const u8_t *>(b));
+        }
+        return is_valid_name_token(reinterpret_cast<const u8_t *>(b));
     }
 
-    inline bool req_single_tchar(const u8_t b)
+    inline u64_t is_valid_name_token_loop(const u8_t *b, std::size_t len)
     {
-        return tables::tchar_map[b];
+        auto &x = tables::tchar_map;
+        int i = 0;
+        while (i < len and x[b[i++]]) [[likely]] pass();
+        return i == len;
     }
 
-    inline bool req_header_name(u8_t *b, u64_t len)
+    inline bool req_header_name(u8_t *b, std::size_t len)
     {
+        // TODO: modify len
         if constexpr (not STRICT_HTTP or IGNORE_LEADING_SP)
             len -= is_whitespace(b[len - 1]);
-        bool valid = true;
-        const u16_t e = len >> constant::max_int_size_p;
-        const u64_t r = len & (constant::max_int_size - 1);
-
-        for (u16_t j = 0; j < e and valid; j++)
-            valid = req_tchar(reinterpret_cast<const u64_t *>(b) + j, constant::max_cff);
-        if not (valid and r)
-            return valid;
-        const u64_t r_mask = (1U << (r << constant::max_int_size_p)) - 1;
-        return r == 1 ? req_single_tchar(*(b + e)) : req_tchar(reinterpret_cast<const u64_t *>(b) + e, r_mask);
+        const u8_t *end = b + (len & ~(constant::int_size - 1));
+        for (; b != end and is_valid_name_token(b); b += 8) [[likely]] pass();
+        const u64_t rem = len % constant::int_size;
+        if (b != end or not rem)
+            return b == end;
+        return is_valid_name_token_loop(b, rem);
     }
 
     /////////////////////////////////////////////
@@ -89,11 +94,11 @@ namespace dhttp::Implementation
 
     inline u16_t http::req_size(const u64_t (&req)[], const int i) const
     {
-        return this->req_type is _req_type::type::request ? (req[i - 0] - (req[i + 1]) - 1)
+        return this->req_type is Reqtype::type::request ? (req[i - 0] - (req[i + 1]) - 1)
                                                           : (req[i - 1] - (req[i - 0]) - 1); // -1 for the sp seperator
     }
 
-    inline bool http::req_version_tag(const u64_t (&req)[], const void *in, const _req_type::req_index &i)
+    inline bool http::req_version_tag(const u64_t (&req)[], const void *in, const Reqtype::req_index &i)
     {
         static constexpr u16_t req_version_required_size = 8; // len(HTTP/1.x)
         return (req_size(req, i[0]) == req_version_required_size) and req_version_is_http_1(in + req[i[0]]);
@@ -228,8 +233,8 @@ namespace dhttp::Implementation
         static_assert(N >= 32 and (N & 1) == 0);
 
         std::size_t j = 0;
-        u8_t *b   = reinterpret_cast<u8_t>(in) + in_reader.at();
-        u8_t *end = b + run_size;
+        u8_t *b   = reinterpret_cast<u8_t>(in) + in_reader.size();
+        u8_t *end = reinterpret_cast<u8_t>(in) + run_size;
 
         do {
             static const simdv v_lf = simdv<N>::splat('\xa');
@@ -257,13 +262,13 @@ namespace dhttp::Implementation
                 // the top three bits of intN in the eop mask can be 100, 110 or 111
                 // in any of the cases, tab[top_three_bits_in_eop] gives us the number of bytes we need to check
                 // also tab[tab[last_three_bits_in_eop]] gives the number of times we need to shift backward in order to read a complete crlfcrlf word
-                static constexpr eop_tab[8]{0, 2, 1, 0, 3, 0, 2, 1};
+                static constexpr alignas(8) u8_t eop_tab[8]{0, 2, 1, 0, 3, 0, 2, 1};
                 int n = eop_tab[eop >> N - 3];
-                if (b < end or rem >= n) [[likely]]
-                    return -((reinterpret_cast<u32_t *>(b - N - eop_tab[n])[0] == 0xd0a0d0a);
+                if (b != end or rem >= n) [[likely]]
+                    return -(reinterpret_cast<u32_t *>(b - N - eop_tab[n])[0] == 0xd0a0d0a);
                 return -(this->n_bytes_to_complete = n);  // we need atleast <= 3 bytes to confirm an exact eop
             }
-        } while (b < end);
+        } while (b != end);
         return 0;
     }
 
@@ -272,15 +277,21 @@ namespace dhttp::Implementation
     {
         static_assert(std::is_integral_v(T)      and
                       sizeof(T) <= sizeof(u64_t) and out_size > 0);
-
+        
+        if (auto n = this->n_bytes_to_complete)
+        {
+            static constexpr alignas(4) u8_t eop_shift[4] = {0, 2, 1, 0};
+            if ((in_size - in_reader.size()) < n)
+                return 0; /* need more bytes */
+            return -(reinterpret_cast<u32_t *>(b + in_reader.at() - eop_shift[n])[0] == 0xd0a0d0a);
+        }
         if (in_reader.set(in_size, 64) < 0 or out_reader.set(out_size) < 0)
             return -400;
-  
+
         u64_t rem  = in_size % 64;
         int   stat = 0;
-        // TODO: start after pos
         // first we try 64 bytes chunk
-        if (const std::size_t n = in_size & ~(64 - 1))
+        if (auto n = in_size & ~(64 - 1))
         {
             stat = parse<T, out_size, 64>(in, in_size, out, n, rem);
             if unlikely (parse_failed(stat) or not rem)
@@ -290,17 +301,16 @@ namespace dhttp::Implementation
         if (rem > 31)
         {
             in_reader.set_incr(32);
-            stat = parse<T, out_size, 32>(in, in_size, out, 1, rem %= 32);
+            stat = parse<T, out_size, 32>(in, in_size, out, in_size & ~(32 - 1), rem %= 32);
             if unlikely (parse_failed(stat) or not rem)
                 return stat;
         }
         // Trailing bytes < 31. safely copy to buffer and process
-        u8_t b[32];
-        memcpy(b, in + n, rem);
-        // place the last re::byte in b[last]
-        b[32] = b[rem - 1];
-
+        alignas(32) u8_t b[32];
         #if HANDLE_TRAIL_LAZY
+         // place the last re::byte in b[last]
+        memcpy(b, in + in_size - rem, rem);
+        b[32] = b[rem - 1];
         // TODO
         #endif
         return stat;
