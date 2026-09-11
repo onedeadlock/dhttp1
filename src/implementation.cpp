@@ -291,12 +291,12 @@ namespace dhttp::Implementation
         auto n = run_size & ~(64 - 1);
         auto r = run_size &  (64 - 1);
         if (this->reset(); n) // first we try 64 bytes chunks
-            if unlikely (stat = parse<T, out_size, 64>(in, in_size, out, n, r); parse_failed(stat) or not r)
+            if unlikely (stat = parse<T, out_size, 64>(in, in_size, out, n, r); parse_failed(stat) or r == 0)
                 return stat;
         if (in_reader.set_incr(32); r > 31)  // or 32 bytes (in_size < 64)
         {
             n += r; r &= (32 - 1);
-            if unlikely (stat = parse<T, out_size, 32>(in, in_size, out, n, r); parse_failed(stat) or not r)
+            if unlikely (stat = parse<T, out_size, 32>(in, in_size, out, n, r); parse_failed(stat) or r == 0)
                 return stat;
         }
         // Trailing bytes or input < 31
