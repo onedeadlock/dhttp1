@@ -169,6 +169,8 @@ namespace dhttp::simd::fallback
         static constexpr int size   = 64;
         static constexpr u64_t msb  = common::constant::msb_64;
         static constexpr u64_t msb3 = common::constant::msb3_64;
+        static constexpr u64_t msb  = common::constant::msb_64;
+        static constexpr u64_t msb3 = common::constant::msb3_64;
     
         simdv<32> lo, hi;
 

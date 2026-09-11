@@ -139,8 +139,8 @@ namespace dhttp::Implementation
         static const simdv<N> vsp   = simdv<N>::splat('\x20');
         static const simdv<N> vhtab = simdv<N>::splat('\x9' );
 
-        if ((crlf & 0x02) and this->unused) [[unlikely]]
-            return  ((crlf & crlf >> 2) & 0x04) ? -400 /* empty request */ : -400 /* blank line TODO: skip */;
+        if (this->unused and (crlf & 0b10)) [[unlikely]]
+            return  ((crlf & crlf >> 2) & 0b100) ? -400 /* empty request */ : -400 /* blank line TODO: skip */;
         if (state.has_trailing_ret()) [[unlikely]]
         {
             if not (lf & 0x01)
@@ -152,33 +152,33 @@ namespace dhttp::Implementation
         }
 
         const u64_t sp    = simdv<N>::cmp_eq(v, vsp, vhtab).to_bitmask();
-        const u64_t wsp   = ~U64(state.has_trailing_whitespace()) & bits::trim(sp); // valid whitespace
-        const u64_t tchar = simdv<N>::gt_or_lt(v, '\x20', '\x7f').to_bitmask() | wsp;
-
-        if (auto has_any_rejected_token = (~tchar | lf | (cr & ~simd<N>::msb)) & bits::tzmask(crlf))
-            return -400;
+        const u64_t tchar = simdv<N>::gt_or_lt(v, '\x20', '\x7f').to_bitmask() | ~U64(state.has_trailing_whitespace()) & bits::trim(sp); // valid whitespace
+        if ((~tchar | lf | (cr & ~simd<N>::msb)) & bits::tzmask(crlf))
+            return -400; /* invalid token */
         this->unused = false;
-        for (u64_t umask = (sp |cr | lf) & bits::blsmask(cr | lf); umask and not out_reader.is_zero(); umask &= umask - 1)
-            reqline.req_line[out_reader.decr()] = in_reader.at() + bits::tzcnt(umask);
+        u64_t mask = (sp |cr | lf) & bits::blsmask(cr | lf); 
+        for (; mask and not out_reader.is_zero(); mask &= mask - 1)
+            reqline.req_line[out_reader.decr()] = in_reader.at() + bits::tzcnt(mask);
 
         if not (crlf)
         {
             state.set_trailing_ret(static_cast<bool>(cr & simd<N>::msb));
             state.set_trailing_whitespace(static_cast<bool>(sp & simd<N>::msb));
-            return in_reader.incr(), 0;
+            in_reader.incr();
+            return -(mask and out_reader.is_zero());
         }
         crlf &= crlf - 1;
         in_reader.incr_by(reqline.req_line[out_reader.at() + 1] + 2); // +2 for cr and lf
         state.completed_request_line(true);
-        return -(out_reader.iszero() or req_version_tag(reqline.req_line, in, Reqtype::index[this->req_type]) isnot http_1);
+        return -(mask or req_version_tag(reqline.req_line, in, Reqtype::index[this->req_type]) isnot http_1);
     }
 
     template <typename T, T out_size, int N>
-    int http::parse_header(void *in, size_t in_size, req<T, out_size> &out, const simdv<N> & v, u64_t lf, u64_t cr, u64_t __crlf)
+    int http::parse_header(void *in, size_t in_size, req<T, out_size>& out, simdv<N>& v, u64_t lf, u64_t cr, u64_t __crlf)
     {
         static const simdv<N> = simdv<N>::splat('\x3a');
         u64_t crlf = __crlf; // copy
-        auto set_header = [](auto& cp, auto &np, auto pos, auto mask, int skip)
+        auto set_header = [](auto& cp, auto& np, auto pos, auto mask, int skip)
             {
                 u64_t end = pos + tzcnt(mask);
                 cp.len = end - cp.pos;
@@ -246,7 +246,7 @@ namespace dhttp::Implementation
             u64_t cr   = simdv<N>::cmp_eq(v, v_cr ).to_bitmask();
             u64_t crlf = cr & (lf << 1);
 
-            if (not state.complete_request_line() and parse_request_line<N>(in, size, v, lf, cr, crlf) < 0) [[unlikely]]
+            if (not state.completed_request_line() and parse_request_line<N>(in, size, v, lf, cr, crlf) < 0) [[unlikely]]
                return -400;
             if (state.completed_request_line() and parse_header<T, out_size, N>(in, in_size, out, v, lf, cr, crlf) < 0) [[unlikely]]
                 return -400;
@@ -257,13 +257,16 @@ namespace dhttp::Implementation
             // next chunk
             b += N;
             // or maybe eop is incomplete: like cr, crlf, crlfcr
-            if (auto eop = (lf | cr) & simdv<N>::msb3) [[unlikely]]
+            if (auto eop = (lf | cr) >> N - 3; n > 0b100) [[unlikely]]
             {
+                // fast fail for cr_*Non-crlf_lf or any other combination of cr and lf 
+                if (eop & 0b101 /* 0b101... */) [[unlikely]]
+                    return -400;
                 // the top three bits of intN in the eop mask can be 100, 110 or 111
                 // in any of the cases, tab[top_three_bits_in_eop] gives us the number of bytes we need to check
                 // also tab[tab[last_three_bits_in_eop]] gives the number of times we need to shift backward in order to read a complete crlfcrlf word
                 static constexpr alignas(8) u8_t eop_tab[8]{0, 2, 1, 0, 3, 0, 2, 1};
-                int n = eop_tab[eop >> N - 3];
+                int n = eop_tab[eop];
                 if (b != end or rem >= n) [[likely]]
                     return -(reinterpret_cast<u32_t *>(b - N - eop_tab[n])[0] == 0xd0a0d0a);
                 return -(this->n_bytes_to_complete = n);  // we need atleast <= 3 bytes to confirm an exact eop

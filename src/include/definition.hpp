@@ -66,6 +66,12 @@
 /////////////////////////////////////
 /////////////////////////////////////
 
+// specialization
+#if MIX_AVX2_SSE
+#endif
+#if MIX_AVX512_AVX2_SSE
+#endif
+
 // branch prediction
 #if 0
 #if __HAVE_GNUC__
@@ -94,7 +100,7 @@
 
 // target
 #if __HAVE_GNUC__
-#    define TARGET(str) __attribute((target(str)))
+#    define TARGET(str) __attribute__((target(str)))
 #else
 #    define TARGET(str) 
 #endif
