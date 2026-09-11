@@ -293,35 +293,49 @@ namespace dhttp::Implementation
         int stat = 0;
         auto n = run_size & ~(simd::max - 1);
         auto r = run_size &  (simd::max - 1);
+        // First, try parsing buffer with specialization size
         if (this->reset(); n)
             if unlikely (stat = parse<T, out_size, simd::max>(in, in_size, out, n, r); parse_failed(stat) or r == 0)
                 return stat;
-        // AVX512 here is an overkill, however if enabled, we could use its useful mask_load to handle trailing bytes if remaining bytes are above 32
+        // AVX512 here is an overkill (and not recommended for a simple parsing as http - my opinion anyways), however if enabled, we could use its useful mask_load to handle trailing bytes if remaining bytes are above 32
         if constexpr (simd<simd::max>::spec is simd::AVX512) 
         {
             if (r > 32)
             {
                 if ((in_size - n) > 31)
                     return 0; // TODO: mask load
-            if constexpr (not NOT_COPY_TRAILS)
+            if constexpr (not NO_COPY_TRAILS)
             {
                 alignas(64) u8_t b[64] = {};
                 memcpy(b, reinterpret_cast<u8_t *>(in + n), r); 
-                return 0; //TODO: process copy
+                if (r == 0) return 0; //TODO: process copy
             }
             if constexpr (not simd::mix_avx512_avx2)
                 goto pure_scalar;
         }
-        if (in_reader.set_incr(32); r > 31)  // or 32 bytes (in_size < 64)
+        // parse trailing 32 bytes
+        if (in_reader.set_incr(32); r > 31) [[likely]]
         {
             n += r; r &= (32 - 1);
+            simd<32>::zero();
             if unlikely (stat = parse<T, out_size, 32>(in, in_size, out, n, r); parse_failed(stat) or r == 0)
                 return stat;
         }
         // trailing bytes or input < 31; if buffer is padded with atleast 32 bytes
-        if (r > 16 and (in_size - n) > 31) [[likely]]
+        if (r > 16)
         {
-            return 0;
+            if ((in_size - n) > 31) [[likely]]
+            {
+                alignas(32) u8_t maskb[32]{};
+                if (r == 0) return 0;
+            }
+            if constexpr (not NO_COPY_TRAILS)
+            {
+                alignas(64) u8_t b[64] = {};
+                memcpy(b, reinterpret_cast<u8_t *>(in + n), r);
+                if (r == 0)
+                    return 0; // TODO: process copy
+            }
         }
 
         pure_scalar:

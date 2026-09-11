@@ -7,6 +7,8 @@
 #include <limits>
 #include <cassert>
 
+#define __SSE4_2__ 1 // remove this
+
 #define is ==
 #define isnot !=
 #define not(x) (!(x))
@@ -72,6 +74,11 @@
 #endif
 #ifndef MIX_AVX512_AVX2
 #    define MIX_AVX512_AVX2 0
+#endif
+
+// no copy trailers policy
+#ifndef NO_COPY_TRAILS
+#    define NO_COPY_TRAILS 0
 #endif
 
 // branch prediction

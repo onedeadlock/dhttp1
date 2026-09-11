@@ -10,7 +10,8 @@ namespace dhttp::simd::westmere
     template<>
     alignas(32) struct simdv<32>
     {
-        static constexpr int size = 32;
+        static constexpr int   spec = simd::SSE4;
+        static constexpr int   size = 32;
         static constexpr u64_t msb  = common::constant::msb_32;
         static constexpr u64_t msb3 = common::constant::msb3_32;
 
@@ -28,13 +29,6 @@ namespace dhttp::simd::westmere
         }
 
         TARGET("sse4")
-        static inline simdv load(void *b)
-        {
-            return {_mm_loadu_si128(reinterpret_cast<__m128i *>(b)),
-                    _mm_loadu_si128(reinterpret_cast<__m128i *>(reinterpret_cast<u8_t *>(b) + 16))};
-        }
-
-        TARGET("sse4")
         inline u64_t to_bitmask(void)
         {
 
@@ -42,6 +36,15 @@ namespace dhttp::simd::westmere
                    _mm_movemask_epi8(lo);
         }
 
+        TARGET("sse4")
+        static inline simdv load(void *b)
+        {
+            return {_mm_loadu_si128(reinterpret_cast<__m128i *>(b)),
+                    _mm_loadu_si128(reinterpret_cast<__m128i *>(reinterpret_cast<u8_t *>(b) + 16))};
+        }
+
+        static inline void zero(void) {}
+       
         TARGET("sse4")
         static inline simdv splat(u8_t v)
         {
@@ -154,35 +157,27 @@ namespace dhttp::simd::westmere
         TARGET("sse4")
         static inline bool is_zero(const simdv& u)
         {
-#ifdef HAVE__SSE4_2__
             return _mm_test_all_zeros(u.lo, u.lo) or _mm_test_all_zeros(u.hi, u.hi);
-#else
-            return static_cast<bool>(bitmask(cmp_zero(u)));
-#endif
         }
 
-#if HAVE__SSSE3__
-#define HAVE_SHUFFLE__ 1
         static inline simdv shuffle(const simdv& u, const simdv& x)
         {
             return {_mm_shuffle_epi8(u.lo, x.lo),
                     _mm_shuffle_epi8(u.hi, x.hi)};
         }
-#else
-        [[gnu::unused]] static inline simdv shuffle(const simdv& u, const simdv& x){}
-#endif
     };
 
     template<>
     alignas(64) struct simdv<64>
     {
-        static constexpr int size = 64;
+        static constexpr int   spec = simd::SSE4;
+        static constexpr int   size = 64;
         static constexpr u64_t msb  = common::constant::msb_64;
         static constexpr u64_t msb3 = common::constant::msb3_32;
     
         simdv<32> lo, hi;
 
-         TARGET("sse4")
+        TARGET("sse4")
         inline bool is_zero(void)
         {
             return lo.is_zero() or hi.is_zero();
@@ -308,7 +303,7 @@ namespace dhttp::simd::westmere
         TARGET("sse4")
         make_flat static inline bool is_zero(const simdv& u)
         {
-             return static_cast<bool>(bitmask(cmp_zero(u)));
+             return simdv<32>::is_zero(u.lo) or simdv<32>::is_zero(u.hi);
         }
 
 
@@ -317,7 +312,5 @@ namespace dhttp::simd::westmere
             return {simdv<32>::shuffle(u.lo, v.lo),
                     simdv<32>::shuffle(u.hi, v.hi)};
         }
-
-        [[gnu::unused]] make_flat static inline simdv shuffle(const simdv& u, const simdv& x){}
     };
 }

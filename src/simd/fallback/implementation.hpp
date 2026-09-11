@@ -11,6 +11,7 @@ namespace dhttp::simd::fallback
     template<>
     alignas(32) struct simdv<32>
     {
+        static constexpr int spec   = simd::INT64;
         static constexpr int size   = 32;
         static constexpr u64_t msb  = common::constant::msb_32;
         static constexpr u64_t msb3 = common::constant::msb3_32;
@@ -54,6 +55,8 @@ namespace dhttp::simd::fallback
             return {v[0], v[1], v[2], v[4]};
             #endif
         }
+
+        static inline void zero(void) {}
 
         make_flat static inline simdv splat(u8_t v)
         {
@@ -166,9 +169,8 @@ namespace dhttp::simd::fallback
     template<>
     alignas(64) struct simdv<64>
     {
+        static constexpr int spec   = simd::INT64;
         static constexpr int size   = 64;
-        static constexpr u64_t msb  = common::constant::msb_64;
-        static constexpr u64_t msb3 = common::constant::msb3_64;
         static constexpr u64_t msb  = common::constant::msb_64;
         static constexpr u64_t msb3 = common::constant::msb3_64;
     
@@ -200,6 +202,8 @@ namespace dhttp::simd::fallback
             #endif
         }
 
+         static inline void zero(void) {}
+         
         make_flat static inline simdv splat(u8_t v)
         {
             simdv<32> x = simdv<32>::splat(v);
