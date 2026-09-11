@@ -46,9 +46,9 @@ namespace dhttp::Implementation
         if constexpr (OPTIMIZE_FOR_MOST_CASE)
         {
             // Most tokens in  header names are usually a-z, A-Z, 0-9 or -
-            return scalar::ascii_fast_tchar(reinterpret_cast<const u64_t *>(b)[0]) or is_valid_name_token(reinterpret_cast<const u8_t *>(b));
+            return scalar::ascii_fast_tchar(reinterpret_cast<const u64_t *>(b)[0]) or is_valid_name_token_(reinterpret_cast<const u8_t *>(b));
         }
-        return is_valid_name_token(reinterpret_cast<const u8_t *>(b));
+        return is_valid_name_token_(reinterpret_cast<const u8_t *>(b));
     }
 
     inline u64_t is_valid_name_token_loop(const u8_t *b, std::size_t len)
@@ -85,11 +85,11 @@ namespace dhttp::Implementation
         return (this->version = i ^ '\x30') < 10;
     }
 
-    inline bool http::req_version_is_http_1(const void *ver_string)
+    inline bool http::req_version_is_http_1(void *b)
     {
         static constexpr u64_t mask = U64('\x48') | U64('\x54') << 8 | U64('\x54') << 16 | U64('\x50') << 24 |
                                       U64('\x2f') << 32 | U64('\x2e') << 40 | U64('\x31') << 48; // H  T  T  P  /  1  .
-        return mask == (*reinterpret_cast<const u64_t *>(ver_string) & 0x00ffffffffffffff) and req_version(reinterpret_cast<const u8_t *>(ver_string)[7]);
+        return mask == (reinterpret_cast<u64_t *>(b)[0] & 0x00ffffffffffffff) and req_version(reinterpret_cast<u8_t *>(b)[7]);
     }
 
     inline u16_t http::req_size(const u64_t (&req)[], const int i) const
@@ -140,14 +140,14 @@ namespace dhttp::Implementation
         static const simdv<N> vhtab = simdv<N>::splat('\x9' );
 
         if (this->unused and (crlf & 0b10)) [[unlikely]]
-            return  ((crlf & crlf >> 2) & 0b100) ? -400 /* empty request */ : -400 /* blank line TODO: skip */;
+            return  (crlf & crlf >> 2) & 0b100 ? -400 /* empty request */ : -400 /* blank line TODO: skip */;
         if (state.has_trailing_ret()) [[unlikely]]
         {
             if not (lf & 0x01)
                 return -400;
             lf &= ~0x1ULL;
             reqline.req_line[out_reader.at()] -= 1; // -cr
-            in_reader.incr_by(1);                 // +lf
+            in_reader.incr_by(1);                   // +lf
             return 0;
         }
 
@@ -229,10 +229,9 @@ namespace dhttp::Implementation
     template <typename T, T out_size, int N>
     inline int http::parse(void *in, size_t in_size, req<T, out_size> &out, std::size_t run_size, std::size_t r)
     {
-        // nly handle 32 and 64 byte chunks
+        // only handle 32 and 64 byte chunks
         static_assert(N >= 32 and (N & 1) == 0);
 
-        std::size_t j = 0;
         u8_t *b   = reinterpret_cast<u8_t>(in) + in_reader.size();
         u8_t *end = reinterpret_cast<u8_t>(in) + run_size;
 
@@ -256,11 +255,11 @@ namespace dhttp::Implementation
                 return 0;
             // next chunk
             b += N;
-            // or maybe eop is incomplete: like cr, crlf, crlfcr
+            // or maybe eop is incomplete; cases like cr, crlf, crlfcr
             if (auto eop = (lf | cr) >> N - 3; n > 0b100) [[unlikely]]
             {
                 // fast fail for (cr/lf)_*Non-crlf*_(cr/lf)
-                if (eop & 0b101 /* 0b101... */) [[unlikely]]
+                if (eop & 0b101) [[unlikely]]
                     return -400;
                 // the top three bits of intN in the eop mask can be 100, 110 or 111
                 // in any of the cases, tab[top_three_bits_in_eop] gives us the number of bytes we need to check
@@ -288,7 +287,7 @@ namespace dhttp::Implementation
         if (auto n = this->n_bytes_to_complete)
         {
             static constexpr alignas(4) u8_t eop_shift[4] = {0, 2, 1, 0};
-            if (run_size >= in_reader.size() and (run_size - in_reader.size()) < n)
+            if (run_size < in_reader.size() or (run_size - in_reader.size()) < n)
                 return 0; /* need more bytes */
             return -(reinterpret_cast<u32_t *>(b + in_reader.at() - eop_shift[n])[0] == 0xd0a0d0a);
         }
@@ -299,21 +298,18 @@ namespace dhttp::Implementation
         if (this->reset(run_size, simd::max); n != 0)
             if unlikely (stat = parse<T, out_size, simd::max>(in, in_size, out, n, r); parse_failed(stat) or r == 0)
                 return stat;
-        // AVX512 here is an overkill (and not recommended for a simple parsing as http - my opinion anyways), however if enabled, we could use its useful mask_load to handle trailing bytes if remaining bytes are above 32
+        // AVX512 here is an overkill (and not recommended for parsing most likely small bytes as http headers - my opinion anyways)
+        // however, if it is enabled, we could use its useful mask_load to handle trailing bytes if they are above ceil
         if constexpr (simd<simd::max>::spec is simd::AVX512) 
         {
-            if (r > 32)
+            if (r > ceil)
             {
-                if ((in_size - n) > 31)
-                    return 0; // TODO: mask load
-            if constexpr (not NO_COPY_TRAILS)
-            {
-                alignas(64) u8_t b[64]{};
-                memcpy(b, reinterpret_cast<u8_t *>(in + n), r); 
-                if (r == 0) return 0; //TODO: process copy
+                alignas(64) u8_t b[64];
+                // TODO: mask load and store to b
             }
             if constexpr (not simd::mix_avx512_avx2)
                 goto pure_scalar;
+            }
         }
         // parse trailing 32 bytes
         if (in_reader.set_incr(32); r > 31) [[likely]]
@@ -328,7 +324,7 @@ namespace dhttp::Implementation
         {
             if ((in_size - n) > 31) [[likely]]
             {
-                alignas(32) u8_t maskb[32]{};
+                // TODO
                 if (r == 0) return 0;
             }
             if constexpr (not NO_COPY_TRAILS)
