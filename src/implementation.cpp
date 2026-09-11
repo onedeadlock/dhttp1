@@ -280,6 +280,9 @@ namespace dhttp::Implementation
     {
         assert(in != std::nullptr and out != std::nullptr and in_size >= run_size); 
 
+        /*
+         *  Specialization 
+         */
         if (auto n = this->n_bytes_to_complete)
         {
             static constexpr alignas(4) u8_t eop_shift[4] = {0, 2, 1, 0};
@@ -293,16 +296,35 @@ namespace dhttp::Implementation
         if (this->reset(); n) // first we try 64 bytes chunks
             if unlikely (stat = parse<T, out_size, 64>(in, in_size, out, n, r); parse_failed(stat) or r == 0)
                 return stat;
+        // AVX512 here is an overkill, however if enabled, we could use its useful mask_load to handle trailing bytes if remaining bytes are above 32
+        if constexpr (simd<simd::max>::specialization is simd::AVX512) 
+        {
+            if (r > 32)
+            {
+                if ((in_size - n) > 31)
+                    return 0; // TODO: mask load
+            if constexpr (not NOT_COPY_TRAILS)
+            {
+                alignas(64) u8_t b[64] = {};
+                memcpy(b, reinterpret_cast<u8_t *>(in + n), r); 
+                return 0; //TODO: process copy
+            }
+            if constexpr (not simd::mix_avx512_avx2)
+                goto pure_scalar;
+        }
         if (in_reader.set_incr(32); r > 31)  // or 32 bytes (in_size < 64)
         {
             n += r; r &= (32 - 1);
             if unlikely (stat = parse<T, out_size, 32>(in, in_size, out, n, r); parse_failed(stat) or r == 0)
                 return stat;
         }
-        // Trailing bytes or input < 31
-        if (r > 16 and (in_size - n) > 31)
+        // trailing bytes or input < 31; if buffer is padded with atleast 32 bytes
+        if (r > 16 and (in_size - n) > 31) [[likely]]
         {
+            return 0;
+        }
 
-        }  
+        pure_scalar:
+        // fallthrough to scalar
         return stat;
 }
