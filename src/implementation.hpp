@@ -293,7 +293,7 @@ namespace dhttp::Implementation
         template <typename T, T out_size, int N>
         int parse_header(void *in, size_t in_size, req<T, out_size>& out, const simdv<N>& v, u64_t lf, u64_t cr, u64_t crlf);
         template <typename T, T out_size>
-        int nparse(void *in, size_t in_size, req<T, out_size> &out);
+        int nparse_no_rescan(void *in, size_t in_size, req<T, out_size> &out);
 
         inline bool parse_failed(int stat)
         {

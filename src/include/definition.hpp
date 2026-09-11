@@ -67,9 +67,11 @@
 /////////////////////////////////////
 
 // specialization
-#if MIX_AVX2_SSE
+#ifndef MIX_AVX2_SSE
+#    define MIX_AVX2_SSE 0 
 #endif
-#if MIX_AVX512_AVX2_SSE
+#ifndef MIX_AVX512_AVX2
+#    define MIX_AVX512_AVX2 0
 #endif
 
 // branch prediction

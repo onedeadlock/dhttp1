@@ -291,13 +291,13 @@ namespace dhttp::Implementation
             return -(reinterpret_cast<u32_t *>(b + in_reader.at() - eop_shift[n])[0] == 0xd0a0d0a);
         }
         int stat = 0;
-        auto n = run_size & ~(64 - 1);
-        auto r = run_size &  (64 - 1);
-        if (this->reset(); n) // first we try 64 bytes chunks
-            if unlikely (stat = parse<T, out_size, 64>(in, in_size, out, n, r); parse_failed(stat) or r == 0)
+        auto n = run_size & ~(simd::max - 1);
+        auto r = run_size &  (simd::max - 1);
+        if (this->reset(); n)
+            if unlikely (stat = parse<T, out_size, simd::max>(in, in_size, out, n, r); parse_failed(stat) or r == 0)
                 return stat;
         // AVX512 here is an overkill, however if enabled, we could use its useful mask_load to handle trailing bytes if remaining bytes are above 32
-        if constexpr (simd<simd::max>::specialization is simd::AVX512) 
+        if constexpr (simd<simd::max>::spec is simd::AVX512) 
         {
             if (r > 32)
             {
