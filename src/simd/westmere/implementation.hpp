@@ -1,5 +1,6 @@
 #pragma once
 #include "../../include/definition.hpp"
+#include "../../common/common.hpp"
 
 namespace dhttp::simd::westmere
 {

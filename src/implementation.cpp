@@ -66,10 +66,10 @@ namespace dhttp::Implementation
             len -= is_whitespace(b[len - 1]);
         const u8_t *end = b + (len & ~(constant::int_size - 1));
         for (; b != end and is_valid_name_token(b); b += 8) [[likely]] pass();
-        const u64_t rem = len % constant::int_size;
-        if (b != end or not rem)
+        const u64_t r = len % constant::int_size;
+        if (b != end or not r)
             return b == end;
-        return is_valid_name_token_loop(b, rem);
+        return is_valid_name_token_loop(b, r);
     }
 
     /////////////////////////////////////////////
@@ -227,7 +227,7 @@ namespace dhttp::Implementation
     }
 
     template <typename T, T out_size, int N>
-    inline int http::parse(void *in, size_t in_size, req<T, out_size> &out, std::size_t run_size, std::size_t rem)
+    inline int http::parse(void *in, size_t in_size, req<T, out_size> &out, std::size_t run_size, std::size_t r)
     {
         // nly handle 32 and 64 byte chunks
         static_assert(N >= 32 and (N & 1) == 0);
@@ -259,7 +259,7 @@ namespace dhttp::Implementation
             // or maybe eop is incomplete: like cr, crlf, crlfcr
             if (auto eop = (lf | cr) >> N - 3; n > 0b100) [[unlikely]]
             {
-                // fast fail for cr_*Non-crlf_lf or any other combination of cr and lf 
+                // fast fail for (cr/lf)_*Non-crlf*_(cr/lf)
                 if (eop & 0b101 /* 0b101... */) [[unlikely]]
                     return -400;
                 // the top three bits of intN in the eop mask can be 100, 110 or 111
@@ -267,7 +267,7 @@ namespace dhttp::Implementation
                 // also tab[tab[last_three_bits_in_eop]] gives the number of times we need to shift backward in order to read a complete crlfcrlf word
                 static constexpr alignas(8) u8_t eop_tab[8]{0, 2, 1, 0, 3, 0, 2, 1};
                 int n = eop_tab[eop];
-                if (b != end or rem >= n) [[likely]]
+                if (b != end or r >= n) [[likely]]
                     return -(reinterpret_cast<u32_t *>(b - N - eop_tab[n])[0] == 0xd0a0d0a);
                 return -(this->n_bytes_to_complete = n);  // we need atleast <= 3 bytes to confirm an exact eop
             }
@@ -276,45 +276,33 @@ namespace dhttp::Implementation
     }
 
     template <typename T, T out_size>
-    int http::nparse(void *in, size_t in_size, req<T, out_size> &out)
+    int http::nparse_no_rescan(void *in, size_t in_size, size_t run_size, req<T, out_size> &out)
     {
-        static_assert(std::is_integral_v(T)      and
-                      sizeof(T) <= sizeof(u64_t) and out_size > 0);
-        
+        assert(in != std::nullptr and out != std::nullptr and in_size >= run_size); 
+
         if (auto n = this->n_bytes_to_complete)
         {
             static constexpr alignas(4) u8_t eop_shift[4] = {0, 2, 1, 0};
-            if ((in_size - in_reader.size()) < n)
+            if (run_size >= in_reader.size() and (run_size - in_reader.size()) < n)
                 return 0; /* need more bytes */
             return -(reinterpret_cast<u32_t *>(b + in_reader.at() - eop_shift[n])[0] == 0xd0a0d0a);
         }
-        if (in_reader.set(in_size, 64) < 0 or out_reader.set(out_size) < 0)
-            return -400;
+        int stat = 0;
+        auto n = run_size & ~(64 - 1);
+        auto r = run_size &  (64 - 1);
+        if (this->reset(); n) // first we try 64 bytes chunks
+            if unlikely (stat = parse<T, out_size, 64>(in, in_size, out, n, r); parse_failed(stat) or not r)
+                return stat;
+        if (in_reader.set_incr(32); r > 31)  // or 32 bytes (in_size < 64)
+        {
+            n += r; r &= (32 - 1);
+            if unlikely (stat = parse<T, out_size, 32>(in, in_size, out, n, r); parse_failed(stat) or not r)
+                return stat;
+        }
+        // Trailing bytes or input < 31
+        if (r > 16 and (in_size - n) > 31)
+        {
 
-        u64_t rem  = in_size % 64;
-        int   stat = 0;
-        // first we try 64 bytes chunk
-        if (auto n = in_size & ~(64 - 1))
-        {
-            stat = parse<T, out_size, 64>(in, in_size, out, n, rem);
-            if unlikely (parse_failed(stat) or not rem)
-                return stat;
-        }
-        // or 32 bytes (in_size < 64)
-        if (rem > 31)
-        {
-            in_reader.set_incr(32);
-            stat = parse<T, out_size, 32>(in, in_size, out, in_size & ~(32 - 1), rem %= 32);
-            if unlikely (parse_failed(stat) or not rem)
-                return stat;
-        }
-        // Trailing bytes < 31. safely copy to buffer and process
-        alignas(32) u8_t b[32];
-        #if HANDLE_TRAIL_LAZY
-         // place the last re::byte in b[last]
-        memcpy(b, in + in_size - rem, rem);
-        b[32] = b[rem - 1];
-        // TODO
-        #endif
+        }  
         return stat;
 }
