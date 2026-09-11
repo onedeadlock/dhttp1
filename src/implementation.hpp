@@ -258,10 +258,10 @@ namespace dhttp::Implementation
     public:
         http(void) { reset(); }
 
-        void reset(void)
+        void reset(std::size_t run_size=0, int incr=0, std::size_t out_size=3)
         {
-            req_type  = Reqtype::type::request; out_reader     = {3, 1};
-            in_reader = {0}; version = -1; n_bytes_to_complete = 0;
+            req_type  = Reqtype::type::request; out_reader = {out_size, 1};
+            in_reader = {run_size, incr}; version = -1; n_bytes_to_complete = 0;
             state     = {0}; unused  = true;
         }
 
