@@ -27,7 +27,7 @@ namespace dhttp::Implementation
         return len - i;
     }
     
-    inline bool is_valid_name_token_(const u8_t *b)
+    inline bool is_valid_name_token_(u8_t *b)
     {
         auto &x = tables::tchar_map;
         if constexpr (OPTIMIZE_FOR_MOST_CASE > 3)
@@ -41,17 +41,17 @@ namespace dhttp::Implementation
         return i == 8;
     }
 
-    make_flat inline bool is_valid_name_token(const void *b)
+    make_flat inline bool is_valid_name_token(void *b)
     {
         if constexpr (OPTIMIZE_FOR_MOST_CASE)
         {
             // Most tokens in  header names are usually a-z, A-Z, 0-9 or -
-            return scalar::ascii_fast_tchar(reinterpret_cast<const u64_t *>(b)[0]) or is_valid_name_token_(reinterpret_cast<const u8_t *>(b));
+            return scalar::ascii_fast_tchar(reinterpret_cast<u64_t *>(b)[0]) or is_valid_name_token_(reinterpret_cast<u8_t *>(b));
         }
-        return is_valid_name_token_(reinterpret_cast<const u8_t *>(b));
+        return is_valid_name_token_(reinterpret_cast<u8_t *>(b));
     }
 
-    inline u64_t is_valid_name_token_loop(const u8_t *b, std::size_t len)
+    inline u64_t is_valid_name_token_loop(u8_t *b, std::size_t len)
     {
         auto &x = tables::tchar_map;
         int i = 0;
@@ -98,7 +98,7 @@ namespace dhttp::Implementation
                                                           : (req[i - 1] - (req[i - 0]) - 1); // -1 for the sp seperator
     }
 
-    inline bool http::req_version_tag(const u64_t (&req)[], const void *in, const Reqtype::req_index &i)
+    inline bool http::req_version_tag(u64_t (&req)[], void *in, Reqtype::req_index &i)
     {
         static constexpr u16_t req_version_required_size = 8; // len(HTTP/1.x)
         return (req_size(req, i[0]) == req_version_required_size) and req_version_is_http_1(in + req[i[0]]);
