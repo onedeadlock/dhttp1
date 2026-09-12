@@ -1,5 +1,5 @@
 #pragma once
-#include "common.hpp"
+#include "../include/constants.hpp"
 #if   __HAVE_MSVC__
 #   include <intrin.h>
 #elif __HAVE_GNUC__
@@ -13,7 +13,7 @@ namespace dhttp::common::bits
     concept _32_64_uint_type = requires {
     std::is_integral_v<T> and !std::is_signed_v<T>; sizeof(T) >= 4; };
 #else
-#    define _32_64_uint_type _32_64_uint_type
+#    define _32_64_uint_type typename
 #endif
 
     template <_32_64_uint_type T>

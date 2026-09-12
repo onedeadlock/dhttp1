@@ -1,48 +1,9 @@
 #pragma once
-
 #include "../include/definition.hpp"
+#include "../include/constants.hpp"
+#include "../include/tables.hpp"
 
-namespace dhttp::common::constant
-{
-    static constexpr std::size_t int_size   = sizeof (u64_t);
-    static constexpr std::size_t int_size_p = (int_size / 2) - 1;
-
-    static constexpr u64_t c7f = 0x7f7f7f7f7f7f7f7fULL;
-    static constexpr u64_t cff = 0xffffffffffffffffULL;
-    static constexpr u64_t c80 = 0x8080808080808080ULL;
-    static constexpr u64_t c01 = 0x0101010101010101ULL;
-    static constexpr u64_t c09 = 0x0909090909090909ULL;
-    static constexpr u64_t c20 = 0x2020202020202020ULL;
-    static constexpr u64_t c30 = 0x3030303030303030ULL;
-    static constexpr u64_t cdf = 0xdfdfdfdfdfdfdfdfULL;
-
-    static constexpr u64_t compress = 0x0002040810204081ULL;
-    static constexpr u64_t msb_64   = 0x8000000000000000ULL;
-    static constexpr u64_t msb_32   = 0x0000000080000000ULL;
-    static constexpr u64_t msb3_64  = 0xe000000000000000ULL;
-    static constexpr u64_t msb3_32  = 0x00000000e0000000ULL;
-    
-
-    static constexpr u64_t  hyphen = U64('\x2d') * c01;
-    
-    static constexpr u64_t AZ_const = c7f & cdf;
-    static constexpr u64_t A = U64('\x7f' - '\x40') * c01;
-    static constexpr u64_t Z = U64('\x7f' + '\x5b') * c01;
-
-    static constexpr u64_t DeBruijn64_const = 0x03f79d71b4cb0a89ULL;
-
-    static constexpr u8_t DeBruijn64_seq[64]{
-        0,  47, 1,  56, 48, 27, 2,  60,
-        57, 49, 41, 37, 28, 16, 3,  61,
-        54, 58, 35, 52, 50, 42, 21, 44,
-        38, 32, 29, 23, 17, 11, 4,  62,
-        46, 55, 26, 59, 40, 36, 15, 53,
-        34, 51, 20, 43, 31, 22, 10, 45,
-        25, 39, 14, 33, 19, 30, 9,  24,
-        13, 18, 8,  12, 7,  6,  5,  63};
-}
-
-namespace dhttp::common::scalar
+namespace dhttp::common
 {
     inline constexpr u64_t _dup(u8_t v)
     {
@@ -133,4 +94,77 @@ namespace dhttp::common::scalar
         static constexpr u64_t u = constant::c80 | constant::c20;
         return (u - (((v & constant::c7f) + constant::c01) & constant::c7f)) & (~v & constant::c80);
     }
+
+    inline u8_t is_whitespace(u8_t x)
+    {
+        return (x == '\x20') or (x == '\x09'); // only for space and horizontal tab
+    };
+
+    inline std::size_t rcount_whitespace(void *b, u64_t len)
+    {
+        std::size_t i = 0;
+        while (i < len and is_whitespace(reinterpret_cast<u8_t *>(b)[i++])) pass();
+        return i;
+    }
+    
+    inline std::size_t lcount_whitespace(void *b, u64_t len)
+    {
+        std::size_t i = len;
+        while (i and is_whitespace(reinterpret_cast<u8_t *>(b)[--i])) pass();
+        return len - i;
+    }
+    
+    inline bool is_valid_name_token_(u8_t *b)
+    {
+        auto &x = tables::tchar_map;
+        if constexpr (OPTIMIZE_FOR_MOST_CASE)
+        {
+            return x[b[0]] & x[b[1]] & x[b[2]] & x[b[3]] &
+                   x[b[4]] & x[b[5]] & x[b[6]] & x[b[7]];
+        }
+        // most compilers will unroll this anyway
+        int i = 0;
+        while (i < 8 and x[b[i++]]) [[likely]] pass();
+        return i == 8;
+    }
+
+    make_flat inline bool is_valid_name_token(void *b)
+    {
+        if constexpr (OPTIMIZE_FOR_MOST_CASE)
+        {
+            // Most tokens in  header names are usually a-z, A-Z, 0-9 or -
+            return ascii_fast_tchar(reinterpret_cast<u64_t *>(b)[0]) or is_valid_name_token_(reinterpret_cast<u8_t *>(b));
+        }
+        return is_valid_name_token_(reinterpret_cast<u8_t *>(b));
+    }
+
+    inline bool is_valid_name_token_loop(u8_t *b, std::size_t len)
+    {
+        auto &x = tables::tchar_map;
+        int i = 0;
+        while (i < len and x[b[i++]]) [[likely]] pass();
+        return i == len;
+    }
+
+    inline bool is_valid_name(u8_t *b, std::size_t len)
+    {
+        // TODO: modify len
+        if constexpr (not STRICT_HTTP or IGNORE_LEADING_SP)
+            len -= is_whitespace(b[len - 1]);
+        const u8_t *end = b + (len & ~(constant::int_size - 1));
+        for (; b != end and is_valid_name_token(b); b += 8) [[likely]] pass();
+        const u64_t r = len % constant::int_size;
+        if (b != end or not r)
+            return b == end;
+        return is_valid_name_token_loop(b, r);
+    }
+
+
+    inline bool version_is_http_1(void *b)
+    {
+        static constexpr u64_t mask = U64('\x48') | U64('\x54') << 8 | U64('\x54') << 16 | U64('\x50') << 24 |
+                                      U64('\x2f') << 32 | U64('\x2e') << 40 | U64('\x31') << 48; // H  T  T  P  /  1  .
+        return mask == (reinterpret_cast<u64_t *>(b)[0] & 0x00ffffffffffffff);
+    }
+
 }

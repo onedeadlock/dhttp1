@@ -139,4 +139,6 @@ namespace dhttp
 #else
     using umax_t = uint64_t;
 #endif
+
+    auto pass   = []{};
 }

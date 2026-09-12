@@ -1,4 +1,5 @@
 #include "implementation.hpp"
+#include "scalar_impl.hpp"
 
 namespace dhttp::Implementation
 {
@@ -6,79 +7,6 @@ namespace dhttp::Implementation
     
     bool http_1 = true;
     bool done   = true;
-    auto pass   = []{};
-
-    inline u8_t is_whitespace(u8_t x)
-    {
-        return (x == '\x20') or (x == '\x09'); // only for space and horizontal tab
-    };
-
-    inline std::size_t rcount_whitespace(void *b, u64_t len)
-    {
-        std::size_t i = 0;
-        while (i < len and is_whitespace(reinterpret_cast<u8_t *>(b)[i++])) pass();
-        return i;
-    }
-    
-    inline std::size_t lcount_whitespace(void *b, u64_t len)
-    {
-        std::size_t i = len;
-        while (i and is_whitespace(reinterpret_cast<u8_t *>(b)[--i])) pass();
-        return len - i;
-    }
-    
-    inline bool is_valid_name_token_(u8_t *b)
-    {
-        auto &x = tables::tchar_map;
-        if constexpr (OPTIMIZE_FOR_MOST_CASE > 3)
-        {
-            return x[b[0]] & x[b[1]] & x[b[2]] & x[b[3]] &
-                   x[b[4]] & x[b[5]] & x[b[6]] & x[b[7]];
-        }
-        // most compilers will unroll this anyway
-        int i = 0;
-        while (i < 8 and x[b[i++]]) [[likely]] pass();
-        return i == 8;
-    }
-
-    make_flat inline bool is_valid_name_token(void *b)
-    {
-        if constexpr (OPTIMIZE_FOR_MOST_CASE)
-        {
-            // Most tokens in  header names are usually a-z, A-Z, 0-9 or -
-            return scalar::ascii_fast_tchar(reinterpret_cast<u64_t *>(b)[0]) or is_valid_name_token_(reinterpret_cast<u8_t *>(b));
-        }
-        return is_valid_name_token_(reinterpret_cast<u8_t *>(b));
-    }
-
-    inline u64_t is_valid_name_token_loop(u8_t *b, std::size_t len)
-    {
-        auto &x = tables::tchar_map;
-        int i = 0;
-        while (i < len and x[b[i++]]) [[likely]] pass();
-        return i == len;
-    }
-
-    inline bool req_header_name(u8_t *b, std::size_t len)
-    {
-        // TODO: modify len
-        if constexpr (not STRICT_HTTP or IGNORE_LEADING_SP)
-            len -= is_whitespace(b[len - 1]);
-        const u8_t *end = b + (len & ~(constant::int_size - 1));
-        for (; b != end and is_valid_name_token(b); b += 8) [[likely]] pass();
-        const u64_t r = len % constant::int_size;
-        if (b != end or not r)
-            return b == end;
-        return is_valid_name_token_loop(b, r);
-    }
-
-    /////////////////////////////////////////////
-    /////////////////////////////////////////////
-    ////////////////          ///////////////////
-    ////////////////   HTTP   ///////////////////
-    ////////////////          ///////////////////
-    /////////////////////////////////////////////
-    /////////////////////////////////////////////
 
     inline int http::req_version(u8_t i)
     {
@@ -87,9 +15,7 @@ namespace dhttp::Implementation
 
     inline bool http::req_version_is_http_1(void *b)
     {
-        static constexpr u64_t mask = U64('\x48') | U64('\x54') << 8 | U64('\x54') << 16 | U64('\x50') << 24 |
-                                      U64('\x2f') << 32 | U64('\x2e') << 40 | U64('\x31') << 48; // H  T  T  P  /  1  .
-        return mask == (reinterpret_cast<u64_t *>(b)[0] & 0x00ffffffffffffff) and req_version(reinterpret_cast<u8_t *>(b)[7]);
+         common::version_is_http_1(b) and req_version(reinterpret_cast<u8_t *>(b)[7]);
     }
 
     inline u16_t http::req_size(u64_t (&req)[], int i)
@@ -296,53 +222,35 @@ namespace dhttp::Implementation
         auto r = run_size &  (simd::max - 1);
         // First, try parsing buffer with specialization size
         if (this->reset(run_size, simd::max); n != 0)
-            if unlikely (stat = parse<T, out_size, simd::max>(in, in_size, out, n, r); parse_failed(stat) or r == 0)
+            if (stat = parse<T, out_size, simd::max>(in, in_size, out, n, r); parse_failed(stat) or r == 0) [[unlikely]]
                 return stat;
-        // if AVX512 is enabled, we could use its useful mask_load to handle trailing bytes if they are above ceil
-        if constexpr (simd<simd::max>::spec is simd::AVX512)
-        {
-            if (r > 31)
-            {
-                alignas(64) u8_t b[64];
-                __mmask64 k = (0x1ULL << r) - 1;
-                __mm512i mb = _mm512_mask_loadu_epi8(_mm512_set1_epi8('x'), k, in + n);
-                _mm512_store_epi64(b, mb);
-                if unlikely (stat = parse<T, out_size, 64>(in, in_size, out, 64, r))
-                    return stat;
-            }
-            alignas(32) u8_t b[32];
-            __mmask32 k = (0x1UL << r) - 1;
-            __mm256i mb = _mm256_mask_loadu_epi8(_mm512_set1_epi8('x'), k, in + n);
-            _mm256_store_epi32(b, mb);
-            if unlikely (stat = parse<T, out_size, 32>(in, in_size, out, 32, r))
-                return stat;
-        }
-        // parse trailing 32 bytes
+        // Parse any 32 bytes
         if (in_reader.set_incr(32); r > 31) [[likely]]
         {
             n += r; r &= (32 - 1);
             simd<32>::zero();
-            if unlikely (stat = parse<T, out_size, 32>(in, in_size, out, n, r); parse_failed(stat) or r == 0)
+            if (stat = parse<T, out_size, 32>(in, in_size, out, n, r); parse_failed(stat) or r == 0) [[unlikely]]
                 return stat;
         }
-        // trailing bytes or input < 31; if buffer is padded with atleast 32 bytes
-        if (r > ceil)
+        // TRAILING BYTES
+        // In order to keep things clean, we avoid backtracking and reparsing past bytes
+        // Anything below 31, falls through to the scalar path, since N < 31 it should be cheap
+        // However, if AVX512 is enabled, and its desired, we could use its useful mask_load to handle the trailing bytes
+        if constexpr (simd<simd::max>::spec is simd::AVX512)
         {
-            if ((in_size - n) > 31) [[likely]]
-            {
-                // TODO
-                if (r == 0) return 0;
-            }
-            if constexpr (not NO_COPY_TRAILS)
-            {
-                alignas(32) u8_t b[32]{};
-                memcpy(b, reinterpret_cast<u8_t *>(in + n), r);
-                if (r == 0)
-                    return 0; // TODO: process copy
-            }
+            u8_t *b = reinterpret_cast<u8_t *>(in + n);
+            // The cost here is that, we read memory thrice: 2x for mask and 1 inside the parser itself
+            // TODO: remove this path, if it doesn't prove any benefit
+            alignas(32) u8_t bv[32];
+            __mmask32 mask  = (0x1ULL << r) - 1;
+            __mm256i  fill  = _mm256_set1_epi8('\x65'); // fill dummy but valid tchar
+            __mm256i in_mask_load = _mm256_mask_loadu_epi8(d, k, b);
+            __mm512i dup_hi = _mm256_or_si256(kb, _mm256_srli_si256(kb, 32 - r));
+            _mm512_store_epi32(bv, dup_hi);
+            if (stat = parse<T, out_size, 32>(in, in_size, out, 32, r)) [[unlikely]]
+                return stat;
         }
-
         pure_scalar:
-        // fallthrough to scalar
-        return stat;
+        // TODO
+        return 0;
 }
