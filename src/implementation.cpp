@@ -32,8 +32,8 @@ namespace dhttp::Implementation
         auto &x = tables::tchar_map;
         if constexpr (OPTIMIZE_FOR_MOST_CASE > 3)
         {
-            return U64(x[b[0]]) & U64(x[b[1]]) & U64(x[b[2]]) & U64(x[b[3]]) &
-                   U64(x[b[4]]) & U64(x[b[5]]) & U64(x[b[6]]) & U64(x[b[7]]);
+            return x[b[0]] & x[b[1]] & x[b[2]] & x[b[3]] &
+                   x[b[4]] & x[b[5]] & x[b[6]] & x[b[7]];
         }
         // most compilers will unroll this anyway
         int i = 0;
