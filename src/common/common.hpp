@@ -7,29 +7,29 @@ namespace dhttp::common::constant
     static constexpr std::size_t int_size   = sizeof (u64_t);
     static constexpr std::size_t int_size_p = (int_size / 2) - 1;
 
-    constexpr u64_t c7f = 0x7f7f7f7f7f7f7f7fULL;
-    constexpr u64_t cff = 0xffffffffffffffffULL;
-    constexpr u64_t c80 = 0x8080808080808080ULL;
-    constexpr u64_t c01 = 0x0101010101010101ULL;
-    constexpr u64_t c09 = 0x0909090909090909ULL;
-    constexpr u64_t c20 = 0x2020202020202020ULL;
-    constexpr u64_t c30 = 0x3030303030303030ULL;
-    constexpr u64_t cdf = 0xdfdfdfdfdfdfdfdfULL;
+    static constexpr u64_t c7f = 0x7f7f7f7f7f7f7f7fULL;
+    static constexpr u64_t cff = 0xffffffffffffffffULL;
+    static constexpr u64_t c80 = 0x8080808080808080ULL;
+    static constexpr u64_t c01 = 0x0101010101010101ULL;
+    static constexpr u64_t c09 = 0x0909090909090909ULL;
+    static constexpr u64_t c20 = 0x2020202020202020ULL;
+    static constexpr u64_t c30 = 0x3030303030303030ULL;
+    static constexpr u64_t cdf = 0xdfdfdfdfdfdfdfdfULL;
 
-    constexpr u64_t compress = 0x0002040810204081ULL;
-    constexpr u64_t msb_64   = 0x8000000000000000ULL;
-    constexpr u64_t msb_32   = 0x0000000080000000ULL;
-    constexpr u64_t msb3_64  = 0xe000000000000000ULL;
-    constexpr u64_t msb3_32  = 0x00000000e0000000ULL;
+    static constexpr u64_t compress = 0x0002040810204081ULL;
+    static constexpr u64_t msb_64   = 0x8000000000000000ULL;
+    static constexpr u64_t msb_32   = 0x0000000080000000ULL;
+    static constexpr u64_t msb3_64  = 0xe000000000000000ULL;
+    static constexpr u64_t msb3_32  = 0x00000000e0000000ULL;
     
 
-    constexpr u64_t  hyphen = U64('\x2d') * c01;
+    static constexpr u64_t  hyphen = U64('\x2d') * c01;
     
-    constexpr u64_t AZ_const = c7f & cdf;
-    constexpr u64_t A = U64('\x7f' - '\x40') * c01;
-    constexpr u64_t Z = U64('\x7f' + '\x5b') * c01;
+    static constexpr u64_t AZ_const = c7f & cdf;
+    static constexpr u64_t A = U64('\x7f' - '\x40') * c01;
+    static constexpr u64_t Z = U64('\x7f' + '\x5b') * c01;
 
-    constexpr u64_t DeBruijn64_const = 0x03f79d71b4cb0a89ULL;
+    static constexpr u64_t DeBruijn64_const = 0x03f79d71b4cb0a89ULL;
 
     static constexpr u8_t DeBruijn64_seq[64]{
         0,  47, 1,  56, 48, 27, 2,  60,
@@ -44,9 +44,6 @@ namespace dhttp::common::constant
 
 namespace dhttp::common::scalar
 {
-    #if __GNUC__
-    #endif
-
     inline constexpr u64_t _dup(u8_t v)
     {
         return U64(v) * constant::c01;
@@ -125,7 +122,7 @@ namespace dhttp::common::scalar
         return _cmpeqz(v ^ constant::hyphen);
     }
 
-    inline u64_t ascii_fast_tchar(const u64_t v)
+    inline u64_t ascii_fast_tchar(u64_t v)
     {
         return ascii_letters(v) | ascii_numbers(v) | ascii_hyphen(v);
     }

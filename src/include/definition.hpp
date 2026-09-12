@@ -13,20 +13,17 @@
 #define isnot !=
 #define not(x) (!(x))
 
-#ifndef __GNUC__
-#    define __GNUC__ 0
-#endif
-
-#ifndef __clang__
-#    define __clang__ 0
-#endif
-
-#if __GNUC__ || __clang__
+#if defined(__GNUC__) || (defined(__clang__) && !defined(_MSC_VER))
 #    undef  __HAVE_GNUC__
-#    define __HAVE_GNUC__ __GNUC__
-#elif defined(_MSC_VER)
+#    define __HAVE_GNUC__ 1
+#else
+#    define __HAVE_GNUC__ 0
+#endif
+#if defined(_MSC_VER)
 #    undef  __HAVE_MSVC__
 #    define __HAVE_MSVC__ _MSC_VER
+#else
+#   define __HAVE_MSVC__ 0
 #endif
 
 #if defined(__AVX2__) || defined(__SSSE3__) || defined(__SSE4_2__) || defined(__SSE2__)

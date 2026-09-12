@@ -92,10 +92,10 @@ namespace dhttp::Implementation
         return mask == (reinterpret_cast<u64_t *>(b)[0] & 0x00ffffffffffffff) and req_version(reinterpret_cast<u8_t *>(b)[7]);
     }
 
-    inline u16_t http::req_size(const u64_t (&req)[], const int i) const
+    inline u16_t http::req_size(u64_t (&req)[], int i)
     {
         return this->req_type is Reqtype::type::request ? (req[i - 0] - (req[i + 1]) - 1)
-                                                          : (req[i - 1] - (req[i - 0]) - 1); // -1 for the sp seperator
+                                                        : (req[i - 1] - (req[i - 0]) - 1); // -1 for the sp seperator
     }
 
     inline bool http::req_version_tag(u64_t (&req)[], void *in, Reqtype::req_index &i)
@@ -134,7 +134,7 @@ namespace dhttp::Implementation
     }
 
     template<int N>
-    int http::parse_request_line(const void *in, const std::size_t size, const simdv<N>& v, u64_t& lf, u64_t& cr, u64_t& crlf)
+    int http::parse_request_line(void *in, std::size_t size, simdv<N>& v, u64_t& lf, u64_t& cr, u64_t& crlf)
     {
         static const simdv<N> vsp   = simdv<N>::splat('\x20');
         static const simdv<N> vhtab = simdv<N>::splat('\x9' );
@@ -143,7 +143,7 @@ namespace dhttp::Implementation
             return  (crlf & crlf >> 2) & 0b100 ? -400 /* empty request */ : -400 /* blank line TODO: skip */;
         if (state.has_trailing_ret()) [[unlikely]]
         {
-            if not (lf & 0x01)
+            if not (lf & 0b1)
                 return -400;
             lf &= ~0x1ULL;
             reqline.req_line[out_reader.at()] -= 1; // -cr
@@ -152,7 +152,7 @@ namespace dhttp::Implementation
         }
 
         const u64_t sp    = simdv<N>::cmp_eq(v, vsp, vhtab).to_bitmask();
-        const u64_t tchar = simdv<N>::gt_or_lt(v, '\x20', '\x7f').to_bitmask() | ~U64(state.has_trailing_whitespace()) & bits::trim(sp); // valid whitespace
+        const u64_t tchar = simdv<N>::gt_or_lt(v, '\x20', '\x7f').to_bitmask() | ~U64(state.has_trailing_whitespace()) & bits::ltrim(sp); // valid whitespace
         if ((~tchar | lf | (cr & ~simd<N>::msb)) & bits::tzmask(crlf))
             return -400; /* invalid token */
         this->unused = false;
@@ -298,18 +298,24 @@ namespace dhttp::Implementation
         if (this->reset(run_size, simd::max); n != 0)
             if unlikely (stat = parse<T, out_size, simd::max>(in, in_size, out, n, r); parse_failed(stat) or r == 0)
                 return stat;
-        // AVX512 here is an overkill (and not recommended for parsing most likely small bytes as http headers - my opinion anyways)
-        // however, if it is enabled, we could use its useful mask_load to handle trailing bytes if they are above ceil
-        if constexpr (simd<simd::max>::spec is simd::AVX512) 
+        // if AVX512 is enabled, we could use its useful mask_load to handle trailing bytes if they are above ceil
+        if constexpr (simd<simd::max>::spec is simd::AVX512)
         {
-            if (r > ceil)
+            if (r > 31)
             {
                 alignas(64) u8_t b[64];
-                // TODO: mask load and store to b
+                __mmask64 k = (0x1ULL << r) - 1;
+                __mm512i mb = _mm512_mask_loadu_epi8(_mm512_set1_epi8('x'), k, in + n);
+                _mm512_store_epi64(b, mb);
+                if unlikely (stat = parse<T, out_size, 64>(in, in_size, out, 64, r))
+                    return stat;
             }
-            if constexpr (not simd::mix_avx512_avx2)
-                goto pure_scalar;
-            }
+            alignas(32) u8_t b[32];
+            __mmask32 k = (0x1UL << r) - 1;
+            __mm256i mb = _mm256_mask_loadu_epi8(_mm512_set1_epi8('x'), k, in + n);
+            _mm256_store_epi32(b, mb);
+            if unlikely (stat = parse<T, out_size, 32>(in, in_size, out, 32, r))
+                return stat;
         }
         // parse trailing 32 bytes
         if (in_reader.set_incr(32); r > 31) [[likely]]

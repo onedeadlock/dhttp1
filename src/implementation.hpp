@@ -1,13 +1,11 @@
 #pragma once
 #include "include/definition.hpp"
-#include "simd/implementation.hpp"
 #include "common/common.hpp"
 #include "common/bits.hpp"
+#include "simd/implementation.hpp"
 
 namespace dhttp::tables
 {
-    static constexpr u8_t U = 0x80;
-
     /* ! # \$ % & ' * + - . ^ _ ` | A-Za-z0-9 : / ? #, [ ] @ ! $ & ' ( ) * + , ; = */
     alignas(64) static constexpr uint8_t token_charset[256]{
         // low 4 bits map
@@ -25,37 +23,19 @@ namespace dhttp::tables
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, U,
-        0, U, U, U, U, 0, 0, 0, U, 0, U, U, U, 0, U, U,
-        U, U, U, U, U, U, U, U, 0, 0, 0, 0, 0, 0, 0, U,
-        U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U,
-        U, U, U, U, U, U, U, U, U, 0, 0, 0, U, U, U, U,
-        U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U,
-        U, U, U, U, U, U, U, U, U, 0, U, 0, U, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+        0, 1, 1, 1, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-
-    static constexpr u8_t mask_win[128]{
-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 }
 
 namespace dhttp::Implementation
@@ -283,17 +263,17 @@ namespace dhttp::Implementation
 
 
         int   req_version(u8_t i);
-        u16_t req_size(const u64_t (&req)[], const int i) const;
-        bool  req_version_is_http_1(const void *ver_string);
-        bool  req_version_tag(const u64_t (&req)[], const void *buf, const Reqtype::req_index& i);
+        u16_t req_size(u64_t (&req)[], int i);
+        bool  req_version_is_http_1(void *b);
+        bool  req_version_tag(u64_t (&req)[], void *b, const Reqtype::req_index& i);
         template <typename T, T out_size, int N>
-        int parse(void *in, size_t in_size, req<T, out_size>& out, std::size_t run_size, std::size_t rem);
+        int parse(void *in, std::size_t in_size, req<T, out_size>& out, std::size_t run_size, std::size_t rem);
         template<int N>
-        int parse_request_line(const void *in, const std::size_t size, const simdv<N>& v, u64_t& lf, u64_t& cr, u64_t& crlf);
+        int parse_request_line(void *in, std::size_t size, simdv<N>& v, u64_t& lf, u64_t& cr, u64_t& crlf);
         template <typename T, T out_size, int N>
-        int parse_header(void *in, size_t in_size, req<T, out_size>& out, const simdv<N>& v, u64_t lf, u64_t cr, u64_t crlf);
+        int parse_header(void *in, std::size_t in_size, req<T, out_size>& out, simdv<N>& v, u64_t lf, u64_t cr, u64_t crlf);
         template <typename T, T out_size>
-        int nparse_no_rescan(void *in, size_t in_size, req<T, out_size> &out);
+        int nparse_no_rescan(void *in, std::size_t in_size, std::size_t run_size, req<T, out_size> &out);
 
         inline bool parse_failed(int stat)
         {
