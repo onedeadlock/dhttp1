@@ -1,7 +1,6 @@
-#pragma once
+#ifndef DHTTP_COMMON_HPP
+#define DHTTP_COMMON_HPP
 #include "../include/definition.hpp"
-#include "../include/constants.hpp"
-#include "../include/tables.hpp"
 
 namespace dhttp::common
 {
@@ -146,9 +145,8 @@ namespace dhttp::common
         return i == len;
     }
 
-    inline bool is_valid_name(u8_t *b, std::size_t len)
+    make_flat inline bool is_valid_name(u8_t *b, std::size_t& len)
     {
-        // TODO: modify len
         if constexpr (not STRICT_HTTP or IGNORE_LEADING_SP)
             len -= is_whitespace(b[len - 1]);
         const u8_t *end = b + (len & ~(constant::int_size - 1));
@@ -159,12 +157,11 @@ namespace dhttp::common
         return is_valid_name_token_loop(b, r);
     }
 
-
     inline bool version_is_http_1(void *b)
     {
         static constexpr u64_t mask = U64('\x48') | U64('\x54') << 8 | U64('\x54') << 16 | U64('\x50') << 24 |
                                       U64('\x2f') << 32 | U64('\x2e') << 40 | U64('\x31') << 48; // H  T  T  P  /  1  .
         return mask == (reinterpret_cast<u64_t *>(b)[0] & 0x00ffffffffffffff);
-    }
-
+    }  
 }
+#endif

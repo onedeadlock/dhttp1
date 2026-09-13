@@ -1,4 +1,5 @@
-#pragma once
+#ifndef DHTTP_SIMD_IMPLEMENTAION_HPP
+#define DHTTP_SIMD_IMPLEMENTAION_HPP
 #include "../include/definition.hpp"
 
 namespace dhttp::simd
@@ -25,3 +26,4 @@ namespace dhttp::simd
 #         using namespace dhttp::simd::fallback; 
      #endif
 }
+#endif // DHTTP_SIMD_IMPLEMENTAION_HPP

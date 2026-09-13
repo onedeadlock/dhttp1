@@ -1,66 +1,31 @@
+#ifndef DHTTP_IMPLEMENTATION_MAIN_HPP
+#define DHTTP_IMPLEMENTATION_MAIN_HPP
 #include "implementation.hpp"
 #include "scalar_impl.hpp"
 
 namespace dhttp::Implementation
-{
-    using namespace common;
-    
+{   
     bool http_1 = true;
     bool done   = true;
 
-    inline int http::req_version(u8_t i)
+    template <int N>
+    inline bool req_header_value(void *in, const simdv<N>& v, u64_t lf, u64_t cr, u64_t crlf, bool done)
     {
-        return (this->version = i ^ '\x30') < 10;
-    }
-
-    inline bool http::req_version_is_http_1(void *b)
-    {
-         common::version_is_http_1(b) and req_version(reinterpret_cast<u8_t *>(b)[7]);
-    }
-
-    inline u16_t http::req_size(u64_t (&req)[], int i)
-    {
-        return this->req_type is Reqtype::type::request ? (req[i - 0] - (req[i + 1]) - 1)
-                                                        : (req[i - 1] - (req[i - 0]) - 1); // -1 for the sp seperator
-    }
-
-    inline bool http::req_version_tag(u64_t (&req)[], void *in, Reqtype::req_index &i)
-    {
-        static constexpr u16_t req_version_required_size = 8; // len(HTTP/1.x)
-        return (req_size(req, i[0]) == req_version_required_size) and req_version_is_http_1(in + req[i[0]]);
-    }
-
-    template<int N>
-    inline bool req_header_value(simdv<N>& v)
-    {
-        return false;
-    }
-
-    template <typename T>
-    make_flat inline bool trim_whitespace(void *b, T &pos, T &len)
-    {
-        static_assert(sizeof(T) <= sizeof(u64_t));
-        void *bv = reinterpret_cast<u8_t *>(b) + pos;
-        std::size_t t_pos = rcount_whitespace(bv, U64(len));
-
-        if (t_pos == len) [[unlikely]]
-            return 1; // all whitespace
-        pos += t_pos;
-        len -= lcount_whitespace(bv, static_cast<u64_t>(len));
-        return 0;
-    };
-
-    template <typename V, int N>
-    inline bool req_header_value(void *in, simdv<N> &v, V &value, u64_t lf, u64_t cr, u64_t crlf, bool done)
-    {
+        #if 0
         static simdv<N> sp   = simdv<N>::splat('\x20');
         static simdv<N> htab = simdv<N>::splat('\x9' );
         bool is_valid = simdv<N>::is_zero(simdv<N>::_or(simdv<N>::gt_or_lt(v, '\x19', '\x7f'), simdv<N>::_or(simdv<N>::sign(v), simdv::cmpeq(v, htab))));
         return not is_valid and ((cr & constant::msb_64 | lf) and crlf);
+        #endif
+    }
+
+    template <int N> inline bool req_header_value_(const simdv<N>& v)
+    {
+        return false;
     }
 
     template<int N>
-    int http::parse_request_line(void *in, std::size_t size, simdv<N>& v, u64_t& lf, u64_t& cr, u64_t& crlf)
+    int http::parse_request_line(void *in, std::size_t size, const simdv<N>& v, u64_t& lf, u64_t& cr, u64_t& crlf)
     {
         static const simdv<N> vsp   = simdv<N>::splat('\x20');
         static const simdv<N> vhtab = simdv<N>::splat('\x9' );
@@ -74,7 +39,7 @@ namespace dhttp::Implementation
             lf &= ~0x1ULL;
             reqline.req_line[out_reader.at()] -= 1; // -cr
             in_reader.incr_by(1);                   // +lf
-            return 0;
+            goto end;
         }
 
         const u64_t sp    = simdv<N>::cmp_eq(v, vsp, vhtab).to_bitmask();
@@ -93,6 +58,7 @@ namespace dhttp::Implementation
             in_reader.incr();
             return -(mask and out_reader.is_zero());
         }
+        end:
         crlf &= crlf - 1;
         in_reader.incr_by(reqline.req_line[out_reader.at() + 1] + 2); // +2 for cr and lf
         state.completed_request_line(true);
@@ -100,9 +66,9 @@ namespace dhttp::Implementation
     }
 
     template <typename T, T out_size, int N>
-    int http::parse_header(void *in, size_t in_size, req<T, out_size>& out, simdv<N>& v, u64_t lf, u64_t cr, u64_t __crlf)
+    int http::parse_header(void *in, size_t in_size, req<T, out_size>& out, const simdv<N>& v, u64_t lf, u64_t cr, u64_t __crlf)
     {
-        static const simdv<N> = simdv<N>::splat('\x3a');
+        static const simdv<N> v_col = simdv<N>::splat('\x3a');
         u64_t crlf = __crlf; // copy
         auto set_header = [](auto& cp, auto& np, auto pos, auto mask, int skip)
             {
@@ -228,24 +194,23 @@ namespace dhttp::Implementation
         if (in_reader.set_incr(32); r > 31) [[likely]]
         {
             n += r; r &= (32 - 1);
-            simd<32>::zero();
             if (stat = parse<T, out_size, 32>(in, in_size, out, n, r); parse_failed(stat) or r == 0) [[unlikely]]
                 return stat;
         }
         // TRAILING BYTES
         // In order to keep things clean, we avoid backtracking and reparsing past bytes
-        // Anything below 31, falls through to the scalar path, since N < 31 it should be cheap
-        // However, if AVX512 is enabled, and its desired, we could use its useful mask_load to handle the trailing bytes
+        // Anything below 31, falls through to the scalar path. since N < 31, it should be cheap
+        // However, if AVX512 is enabled, and it's desired, we could use mask_load to handle the trailing bytes
         if constexpr (simd<simd::max>::spec is simd::AVX512)
         {
             u8_t *b = reinterpret_cast<u8_t *>(in + n);
-            // The cost here is that, we read memory thrice: 2x for mask and 1 inside the parser itself
+            // The cost here is that, we read memory twice: 1 for mask and 1 inside the parser itself
             // TODO: remove this path, if it doesn't prove any benefit
             alignas(32) u8_t bv[32];
             __mmask32 mask  = (0x1ULL << r) - 1;
             __mm256i  fill  = _mm256_set1_epi8('\x65'); // fill dummy but valid tchar
-            __mm256i in_mask_load = _mm256_mask_loadu_epi8(d, k, b);
-            __mm512i dup_hi = _mm256_or_si256(kb, _mm256_srli_si256(kb, 32 - r));
+            __mm256i in_mask_load = _mm256_mask_loadu_epi8(fill, mask, b);
+            __mm512i dup_hi = _mm256_or_si256(kb, _mm256_srli_si256(in_mask_load, 32 - r));
             _mm512_store_epi32(bv, dup_hi);
             if (stat = parse<T, out_size, 32>(in, in_size, out, 32, r)) [[unlikely]]
                 return stat;
@@ -253,4 +218,6 @@ namespace dhttp::Implementation
         pure_scalar:
         // TODO
         return 0;
+    }
 }
+#endif

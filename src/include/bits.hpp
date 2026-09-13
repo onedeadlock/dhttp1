@@ -1,12 +1,13 @@
-#pragma once
-#include "../include/constants.hpp"
+#ifndef DHTTP_BITS_H
+#define DHTTP_BITS_H
+#include "definition.hpp"
 #if   __HAVE_MSVC__
 #   include <intrin.h>
 #elif __HAVE_GNUC__
-#include <x86intrin.h>
+//#include <x86intrin.h>
 #endif
 
-namespace dhttp::common::bits
+namespace dhttp::bits
 {
 #if defined(__cplusplus) && __cplusplus >= 202002L
     template <typename T = u64_t>
@@ -73,8 +74,6 @@ namespace dhttp::common::bits
     template <_32_64_uint_type T>
     inline T xlsfill(T x)
     {
-        if constexpr (__HAVE_MSVC__ or __HAVE_GNUC__)
-             return ~__blsfill_u64(U64(x));
         return x ^ -x;
     }
 
@@ -86,7 +85,7 @@ namespace dhttp::common::bits
 #if defined(_tzcnt_u32) || defined(__HAVE_MSVC__)
             return _tzcnt_u32(x);
 #elif __HAVE_GNUC__
-        return __builtin_ctz(x);
+        return __builtin_ctzl(U32(x));
 #else
             x |= x >> 1; x |= x >> 2;
             x |= x >> 4; x |= x >> 8;
@@ -107,3 +106,4 @@ namespace dhttp::common::bits
     }
 #undef _32_64_uint_type
 }
+#endif // DHTTP_BITS_H

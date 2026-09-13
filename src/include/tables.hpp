@@ -1,5 +1,7 @@
-#pragma once
-#include "../include/definition.hpp"
+#ifndef DHTTP_DEFINITION_HPP
+#define DHTTP_DEFINITION_HPP
+#include "definition.hpp"
+
 namespace dhttp::tables
 {
     /* ! # \$ % & ' * + - . ^ _ ` | A-Za-z0-9 : / ? #, [ ] @ ! $ & ' ( ) * + , ; = */
@@ -33,3 +35,4 @@ namespace dhttp::tables
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 }
+#endif // DHTTP_DEFINITION_HPP

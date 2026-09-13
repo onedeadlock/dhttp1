@@ -1,4 +1,5 @@
-#pragma once
+#ifndef DHTTP_SIMD_WESTMERE_HPP
+#define DHTTP_SIMD_WESTMERE_HPP
 #include "../../include/definition.hpp"
 #include "../../common/common.hpp"
 
@@ -12,8 +13,8 @@ namespace dhttp::simd::westmere
     {
         static constexpr int   spec = simd::SSE4;
         static constexpr int   size = 32;
-        static constexpr u64_t msb  = common::constant::msb_32;
-        static constexpr u64_t msb3 = common::constant::msb3_32;
+        static constexpr u64_t msb  = constant::msb_32;
+        static constexpr u64_t msb3 = constant::msb3_32;
 
         __m128i lo, hi;
 
@@ -172,8 +173,8 @@ namespace dhttp::simd::westmere
     {
         static constexpr int   spec = simd::SSE4;
         static constexpr int   size = 64;
-        static constexpr u64_t msb  = common::constant::msb_64;
-        static constexpr u64_t msb3 = common::constant::msb3_32;
+        static constexpr u64_t msb  = constant::msb_64;
+        static constexpr u64_t msb3 = constant::msb3_32;
     
         simdv<32> lo, hi;
 
@@ -314,3 +315,4 @@ namespace dhttp::simd::westmere
         }
     };
 }
+#endif // DHTTP_SIMD_WESTMERE_HPP

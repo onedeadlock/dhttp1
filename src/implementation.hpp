@@ -1,10 +1,11 @@
-#pragma once
+#ifndef DHTTP_IMPLEMENTAION_HPP
+#define DHTTP_IMPLEMENTATION_HPP
+
 #include "include/definition.hpp"
+#include "simd/implementation.hpp"
 #include "include/bits.hpp"
 #include "include/constants.hpp"
 #include "common/common.hpp"
-#include "simd/implementation.hpp"
-
 
 namespace dhttp::Implementation
 {
@@ -200,7 +201,6 @@ namespace dhttp::Implementation
         };
     };
 
-
     class http
     {
     public:
@@ -224,28 +224,47 @@ namespace dhttp::Implementation
         int  version;
         // number of expected eop (end of parse) bytes (crlfcrlf)
         int  n_bytes_to_complete;
-        // keep track of sp and cr
+        // state
         State state;
         // true after reset
         bool unused;
 
-
-        int   req_version(u8_t i);
-        u16_t req_size(u64_t (&req)[], int i);
-        bool  req_version_is_http_1(void *b);
-        bool  req_version_tag(u64_t (&req)[], void *b, const Reqtype::req_index& i);
         template <typename T, T out_size, int N>
         int parse(void *in, std::size_t in_size, req<T, out_size>& out, std::size_t run_size, std::size_t rem);
         template<int N>
-        int parse_request_line(void *in, std::size_t size, simdv<N>& v, u64_t& lf, u64_t& cr, u64_t& crlf);
+        int parse_request_line(void *in, std::size_t size, const simdv<N>& v, u64_t& lf, u64_t& cr, u64_t& crlf);
         template <typename T, T out_size, int N>
-        int parse_header(void *in, std::size_t in_size, req<T, out_size>& out, simdv<N>& v, u64_t lf, u64_t cr, u64_t crlf);
+        int parse_header(void *in, std::size_t in_size, req<T, out_size>& out, const simdv<N>& v, u64_t lf, u64_t cr, u64_t crlf);
         template <typename T, T out_size>
         int nparse_no_rescan(void *in, std::size_t in_size, std::size_t run_size, req<T, out_size> &out);
 
+        int http::nparse_header_line_fallback(void *in, std::size_t in_size, std::size_t run_size, u64_t *out, std::size_t out_size);
         inline bool parse_failed(int stat)
         {
             return stat < 0;
         }
+
+        inline int set_version(u8_t i)
+        {
+            return (this->version = i ^ '\x30') < 10;
+        }
+
+        inline bool req_version_is_http_1(void *b)
+        {
+            return common::version_is_http_1(b) and set_version(reinterpret_cast<u8_t *>(b)[7]);
+        }
+
+        inline u16_t req_size(u64_t (&req)[], int i)
+        {
+            return this->req_type is Reqtype::type::request ? (req[i - 0] - (req[i + 1]) - 1)
+                                                            : (req[i - 1] - (req[i - 0]) - 1); // -1 for the sp seperator
+        }
+
+        inline bool req_version_tag(u64_t (&req)[], void *in, Reqtype::req_index &i)
+        {
+            static constexpr u16_t req_version_required_size = 8; // len(HTTP/1.x)
+            return (req_size(req, i[0]) == req_version_required_size) and req_version_is_http_1(in + req[i[0]]);
+        }
     };
 };
+#endif //IMPLEMENTATION_HPP

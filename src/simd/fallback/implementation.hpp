@@ -1,6 +1,6 @@
-#pragma once
+#ifndef DHTTP_SIMD_FALLBACK_HPP
+#define DHTTP_SIMD_FALLBACK_HPP
 #include "../../include/definition.hpp"
-#include "../../common/common.hpp"
 
 namespace dhttp::simd::fallback
 {
@@ -13,8 +13,8 @@ namespace dhttp::simd::fallback
     {
         static constexpr int spec   = simd::INT64;
         static constexpr int size   = 32;
-        static constexpr u64_t msb  = common::constant::msb_32;
-        static constexpr u64_t msb3 = common::constant::msb3_32;
+        static constexpr u64_t msb  = constant::msb_32;
+        static constexpr u64_t msb3 = constant::msb3_32;
 
         u64_t lo, xlo, hi, xhi;
 
@@ -60,7 +60,7 @@ namespace dhttp::simd::fallback
 
         make_flat static inline simdv splat(u8_t v)
         {
-            u64_t x = scalar::_dup(v);
+            u64_t x = common::_dup(v);
             return {x, x, x, x};
         }
 
@@ -74,36 +74,36 @@ namespace dhttp::simd::fallback
 
         make_flat static inline simdv cmp_zero(const simdv& v)
         {
-            return {scalar::_cmpeqz(v.lo ),
-                    scalar::_cmpeqz(v.xlo),
-                    scalar::_cmpeqz(v.hi ),
-                    scalar::_cmpeqz(v.xhi)};
+            return {common::_cmpeqz(v.lo ),
+                    common::_cmpeqz(v.xlo),
+                    common::_cmpeqz(v.hi ),
+                    common::_cmpeqz(v.xhi)};
         }
 
         make_flat static inline simdv cmp_eq(const simdv& u, const simdv& v)
         {
-            return {scalar::_cmpeq(u.lo,  v.lo ),
-                    scalar::_cmpeq(u.xlo, v.xlo),
-                    scalar::_cmpeq(u.hi,  v.hi ),
-                    scalar::_cmpeq(u.xhi, v.xhi)};
+            return {common::_cmpeq(u.lo,  v.lo ),
+                    common::_cmpeq(u.xlo, v.xlo),
+                    common::_cmpeq(u.hi,  v.hi ),
+                    common::_cmpeq(u.xhi, v.xhi)};
         }
 
         make_flat static inline simdv cmp_eq(const simdv& u, const simdv& v, const simdv& w)
         {
             return {
-                scalar::_cmpeq(u.lo, v.lo ) | scalar::_cmpeq(u.lo, w.lo ),
-                scalar::_cmpeq(u.lo, v.xlo) | scalar::_cmpeq(u.lo, w.xlo),
-                scalar::_cmpeq(u.lo, v.hi ) | scalar::_cmpeq(u.lo, w.hi ),
-                scalar::_cmpeq(u.lo, v.xhi) | scalar::_cmpeq(u.lo, w.xhi)};
+                common::_cmpeq(u.lo, v.lo ) | common::_cmpeq(u.lo, w.lo ),
+                common::_cmpeq(u.lo, v.xlo) | common::_cmpeq(u.lo, w.xlo),
+                common::_cmpeq(u.lo, v.hi ) | common::_cmpeq(u.lo, w.hi ),
+                common::_cmpeq(u.lo, v.xhi) | common::_cmpeq(u.lo, w.xhi)};
         }
 
         make_flat static inline simdv cmp_gt(const simdv& v, u8_t a)
         {
-            u64_t x = scalar::_dup(a);
-            return {scalar::_cmpgt<0>(v.lo ),
-                    scalar::_cmpgt<0>(v.xlo),
-                    scalar::_cmpgt<0>(v.hi ),
-                    scalar::_cmpgt<0>(v.xhi)};
+            u64_t x = common::_dup(a);
+            return {common::_cmpgt<0>(v.lo ),
+                    common::_cmpgt<0>(v.xlo),
+                    common::_cmpgt<0>(v.hi ),
+                    common::_cmpgt<0>(v.xhi)};
         }
 
         static inline simdv cmp_gt(const simdv& u, const simdv& v)
@@ -113,7 +113,7 @@ namespace dhttp::simd::fallback
 
         static inline simdv cmp_lt(const simdv& v, u8_t a)
         {
-            u64_t x = scalar::_dup(a);
+            u64_t x = common::_dup(a);
             return {0, 0, 0, 0};
         }
 
@@ -124,8 +124,8 @@ namespace dhttp::simd::fallback
 
         static inline simdv gt_and_lt(const simdv& v, u8_t a, u8_t b)
         {
-            u64_t x = scalar::_dup(a);
-            u64_t y = scalar::_dup(b);
+            u64_t x = common::_dup(a);
+            u64_t y = common::_dup(b);
             return {0, 0, 0, 0};
         }
 
@@ -171,8 +171,8 @@ namespace dhttp::simd::fallback
     {
         static constexpr int spec   = simd::INT64;
         static constexpr int size   = 64;
-        static constexpr u64_t msb  = common::constant::msb_64;
-        static constexpr u64_t msb3 = common::constant::msb3_64;
+        static constexpr u64_t msb  = constant::msb_64;
+        static constexpr u64_t msb3 = constant::msb3_64;
     
         simdv<32> lo, hi;
 
@@ -305,3 +305,4 @@ namespace dhttp::simd::fallback
         }
     };
 }
+#endif // DHTTP_SIMD_FALLBACK_HPP
