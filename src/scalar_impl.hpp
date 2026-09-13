@@ -20,8 +20,9 @@ namespace dhttp::Implementation
         std::size_t i = in_reader.at();
 
         u64_t *b = reinterpret_cast<u64_t *>(in + i);
-        bool tcr = false, tsp = false;
-        
+        bool tcr = false, tsp = false, x = 0;
+        u8_t c;
+
         for (; out_size > 8; out_size -= 8)
         {
             u64_t v = b[0];
@@ -32,7 +33,7 @@ namespace dhttp::Implementation
 
             if (tcr) [[unlikely]]
             {
-                if (not (lf & 1))
+                if (not (lf & 0b1))
                     return -400;
                 goto end;
             }
@@ -45,7 +46,6 @@ namespace dhttp::Implementation
             if (0 and tchar & bits::blsmask(crlf));
             if (tchar)
                 return -400;
-            tcr = cr & constant::msb_64;
             u64_t mask = sp;
             for (; mask and j; j--, mask &= mask - 1)
                 reinterpret_cast<u8_t *>(out)[i] = i + bits::tzcnt(mask);
@@ -54,6 +54,8 @@ namespace dhttp::Implementation
             {
                 if (j == 0) [[unlikely]]
                     return -400;
+                tsp = sp & constant::msb_64;
+                tcr = cr & constant::msb_64;
                 continue;
             }
             goto end;
@@ -61,7 +63,7 @@ namespace dhttp::Implementation
         b += 0;
         while (j and out_size--)
         {
-            u8_t c = b[out_size];
+            c = b[out_size];
             if (c == '\xa' or c == '\xd')
                 break;
             if (c == '\x20' or c == '\x9'))
@@ -73,17 +75,15 @@ namespace dhttp::Implementation
                 }
             i++;
         }
-        u8_t c = b[i];
-        bool x = 0;
         switch (out_size)
         {
             case 1: x = is_valid(b[i]); break;
             case 2: x = is_valid(b[i]) & is_valid(b[i+1]); break;
-            case 3: x = is_valid(b[i]) & is_valid(b[i+1]) & is_valid(b[i+1]); break;
-            case 4: x = (common::_cmp_gt_and_lt<'\x20', '\x7f'>(reinterpret_cast<u32 *>(b+i)) == 0b1111U); break;
-            case 5: x = (common::_cmp_gt_and_lt<'\x20', '\x7f'>(reinterpret_cast<u32 *>(b+i)) == 0b1111U) & is_valid(b[i+4]); break;
-            case 6: x = (common::_cmp_gt_and_lt<'\x20', '\x7f'>(reinterpret_cast<u32 *>(b+i)) == 0b1111U) & is_valid(b[i+4]) & is_valid(b[i+4]); break;
-            case 7: x = (common::_cmp_gt_and_lt<'\x20', '\x7f'>(reinterpret_cast<u32 *>(b+i)) == 0b1111U) & is_valid(b[i+4]) & is_valid(b[i+4]) & is_valid(b[i+4]); break;
+            case 3: x = is_valid(b[i]) & is_valid(b[i+1]) & is_valid(b[i+2]); break;
+            case 4: x = (common::_cmp_gt_and_lt<'\x20', '\x7f'>(reinterpret_cast<u32_t *>(b+i)) == 0x80808080U); break;
+            case 5: x = (common::_cmp_gt_and_lt<'\x20', '\x7f'>(reinterpret_cast<u32_t *>(b+i)) == 0x80808080U) & is_valid(b[i+4]); break;
+            case 6: x = (common::_cmp_gt_and_lt<'\x20', '\x7f'>(reinterpret_cast<u32_t *>(b+i)) == 0x80808080U) & is_valid(b[i+4]) & is_valid(b[i+5]); break;
+            case 7: x =!(common::_cmp_gt_and_lt<'\x20', '\x7f'>(reinterpret_cast<u32_t *>(b+i)) ^ common::_cmp_gt_and_lt<'\x20', '\x7f'>(reinterpret_cast<u32_t *>(b + i - 1))); break;
         }
         if (x == 0) [[unlikely]]
             return -400;
